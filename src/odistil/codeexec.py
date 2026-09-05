@@ -23,6 +23,24 @@ def extract_code(text: str) -> str:
     return text[m.start():].strip() if m else text.strip()
 
 
+def parses(text: str) -> bool:
+    """Cheapest possible filter: is there extractable code that is valid Python?
+
+    Used for free-form coding instructions, which have no tests to run against.
+    Catches truncated traces and prose-only answers without executing anything.
+    """
+    import ast
+
+    code = extract_code(text)
+    if not code.strip():
+        return False
+    try:
+        ast.parse(code)
+    except SyntaxError:
+        return False
+    return True
+
+
 def run_program(program: str, timeout: float = 10.0) -> tuple[bool, str]:
     with tempfile.TemporaryDirectory() as td:
         f = Path(td) / "prog.py"

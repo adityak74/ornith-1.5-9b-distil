@@ -13,7 +13,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from ..codeexec import check_with_tests
+from ..codeexec import check_with_tests, parses
 from ..config import Config
 from ..textnorm import Decontaminator, final_letter, qa_match
 
@@ -46,6 +46,10 @@ def _verify(rec: dict, dcfg: dict) -> tuple[bool, str]:
     if kind == "code" and dcfg["verify_code"]:
         ok, err = check_with_tests(answer, gold.get("setup", ""), gold["tests"])
         return ok, f"code:{err.splitlines()[-1][:60] if err else 'ok'}"
+    if kind == "code_free" and dcfg["verify_code"]:
+        # No tests exist for these. Require at least a syntactically valid code
+        # block, which rejects truncated traces and prose-only answers.
+        return parses(answer), "code_free:parse"
     return True, "unverified"
 
 

@@ -9,17 +9,17 @@ prompts:
   # `dataset` re-checks with n-gram decontamination against MMLU test /
   # TruthfulQA / HumanEval before writing the training files.
   knowledge:
-    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 6000, kind: mcq}
-    - {hf: allenai/ai2_arc, config: ARC-Challenge, split: train, n: 1000, kind: mcq}
-    - {hf: allenai/openbookqa, config: main, split: train, n: 1000, kind: mcq}
+    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 2500, kind: mcq}
+    - {hf: allenai/ai2_arc, config: ARC-Challenge, split: train, n: 500, kind: mcq}
+    - {hf: allenai/openbookqa, config: main, split: train, n: 400, kind: mcq}
   truthfulness:
     # TruthfulQA itself is eval-only (817 items, no train split) -- never sampled.
-    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 3000, kind: qa}
-    - {hf: allenai/sciq, config: default, split: train, n: 1500, kind: mcq}
+    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 1200, kind: qa}
+    - {hf: allenai/sciq, config: default, split: train, n: 800, kind: mcq}
   code:
     - {hf: google-research-datasets/mbpp, config: full, split: train, n: 374, kind: code}
     - {hf: google-research-datasets/mbpp, config: full, split: prompt, n: 10, kind: code}
-    - {hf: m-a-p/CodeFeedback-Filtered-Instruction, config: default, split: train, n: 4000, kind: code_free}
+    - {hf: m-a-p/CodeFeedback-Filtered-Instruction, config: default, split: train, n: 1500, kind: code_free}
 
 teach:
   batch_size: 8          # mlx batched generation
