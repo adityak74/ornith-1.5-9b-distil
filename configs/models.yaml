@@ -1,5 +1,8 @@
 # Model registry. Repo ids are HuggingFace ids; `local` overrides with a path on disk.
 
+# Where a finished model is installed for the oMLX server to pick up.
+install_dir: /Volumes/SATECHI/.omlx
+
 student:
   base:            # full-precision student we actually train (bf16, 17 GB)
     repo: ornith-ai/Ornith-1.5-9B-MLX

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from .config import Config
 
@@ -71,6 +72,14 @@ def cmd_quantize(args) -> int:
     return 0
 
 
+def cmd_package(args) -> int:
+    from .pipeline.package import package
+
+    cfg = _cfg(args)
+    package(cfg, Path(args.src), args.name, install=args.install)
+    return 0
+
+
 def cmd_eval(args) -> int:
     from .eval.runner import run
 
@@ -124,6 +133,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("quantize", help="stage 6: quantize the fused checkpoint")
     s.add_argument("--variant", required=True, help="q4 | q8 | oq4 | oq8 | oq3")
     s.set_defaults(fn=cmd_quantize)
+
+    s = sub.add_parser("package", help="make a checkpoint loadable by oMLX")
+    s.add_argument("--src", required=True, help="checkpoint directory to package")
+    s.add_argument("--name", required=True, help="model name, e.g. Ornith-1.5-9B-MLX-distil-oQ4")
+    s.add_argument("--install", action="store_true", help="copy into the oMLX model dir")
+    s.set_defaults(fn=cmd_package)
 
     s = sub.add_parser("eval", help="stage 7: run the benchmarks")
     s.add_argument("--model", required=True,
