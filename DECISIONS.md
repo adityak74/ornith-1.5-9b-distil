@@ -124,3 +124,47 @@ regime where this kind of distillation gets most of its gain.
 **bf16 base: 145/164 = 88.4% HumanEval**, 15 items still truncated at the 4096
 budget. That is the number the distilled model has to beat; oMLX's 91.5% for
 the same weights is a different measurement and is not the target.
+
+## 9. GPU jobs must run one at a time
+
+Running Qwen generation and LoRA training together killed both with
+`[METAL] Command buffer execution failed: Insufficient Memory`. A 4-bit 35B
+teacher is ~19 GB and a 9B training job peaks near 48 GB, against a 52 GB
+recommended working set. Every stage from here runs serially.
+
+## 10. Training envelope: the architecture, not the parameter count, sets it
+
+Measured peak memory for LoRA on the 9B, batch 1, gradient checkpointing on:
+
+| sequence length | layers adapted | peak memory | speed |
+|---:|---:|---:|---:|
+| 1024 | 32 (all) | 48.6 GB | 36 s/iter |
+| 1024 | 16 | 47.8 GB | 20 s/iter |
+| 1024 | 8 | 47.4 GB | 14 s/iter |
+| 512 | 8 | 27.2 GB | 7 s/iter |
+
+Two things follow. Memory is driven by the **forward** pass, not by how many
+layers carry adapters — roughly 20 MB per token, because the hybrid GDN
+`linear_attn` layers materialise per-timestep state. And the number of adapted
+layers changes speed, not footprint, because it only truncates backprop.
+
+Settled on **rank 32, top 16 of 32 layers, 896-token sequences, batch 1 with
+4-step gradient accumulation**. 896 keeps peak near 42 GB, leaving headroom
+against the 52 GB ceiling — at 1024 the run sits at 47.8 GB and thrashes, which
+is what dropped throughput to ~30 tokens/s. Adapting the top half of the stack
+is the compromise between capacity and the 2.5x slowdown of adapting all of it.
+
+The cost of the 896-token cap: samples whose prompt plus reasoning trace exceed
+it are dropped rather than truncated (a truncated target teaches the model to
+stop mid-answer). That is roughly half the traces, and it biases training
+toward the teachers' more concise reasoning — an acceptable trade, since the
+alternative is not training on this machine at all.
+
+## 11. Bug: the mixer sized itself from the scarcest domain
+
+16 stray knowledge traces from the OOM-killed Qwen run caused the dataset stage
+to discard 750 verified code samples, because the mixture budget was computed
+from the least-supplied domain. The scale now comes from the domain that is
+most over-supplied relative to its share, so every domain contributes
+everything it has up to its proportional cap. Also enforced `max_seq_len`,
+which was configured but never applied.

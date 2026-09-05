@@ -28,6 +28,8 @@ def _yaml(cfg: Config, adapter_dir: Path) -> Path:
         "fine_tune_type": t["fine_tune_type"],
         "num_layers": t["num_layers"],
         "batch_size": t["batch_size"],
+        "grad_accumulation_steps": t.get("grad_accumulation_steps", 1),
+        "val_batches": t.get("val_batches", 8),
         "iters": t["iters"],
         "learning_rate": t["learning_rate"],
         "max_seq_length": t["max_seq_length"],

@@ -38,7 +38,7 @@ dataset:
   verify_code: true      # generated code must pass the dataset's own tests
   verify_qa: true        # normalized-substring match against gold aliases
   decontaminate_ngram: 13
-  max_seq_len: 4096
+  max_seq_len: 896       # must match train.max_seq_length; longer samples are dropped
   valid_frac: 0.02
   mix:                   # target proportions of the final training set
     knowledge: 0.40
@@ -49,16 +49,17 @@ train:
   # Full FT of a 9B in bf16 needs ~110 GB with AdamW; on a 64 GB M4 Pro we
   # train high-rank LoRA over the bf16 base instead, then fuse.
   fine_tune_type: lora
-  num_layers: 32          # -1 = all
-  rank: 64
+  num_layers: 16          # half the stack; backprop stops there
+  rank: 32
   scale: 16.0
   dropout: 0.05
-  batch_size: 2
-  iters: 4000
+  batch_size: 1           # memory scales ~20 MB/token; batch 2 does not fit
+  grad_accumulation_steps: 4
+  iters: 900
   learning_rate: 5.0e-5
   lr_schedule: cosine_decay
   warmup: 100
-  max_seq_length: 4096
+  max_seq_length: 896     # 47.8 GB peak at 1024 is too close to the 52 GB ceiling
   grad_checkpoint: true
   steps_per_eval: 200
   save_every: 250

@@ -59,6 +59,11 @@ def _target(rec: dict, keep_think: bool) -> str:
     return rec["answer"]
 
 
+def _too_long(cfg: Config, rec: dict, keep_think: bool, cap: int, tok) -> bool:
+    text = rec["prompt"] + _target(rec, keep_think)
+    return len(tok.encode(text)) > cap
+
+
 def build(cfg: Config, skip_decontam: bool = False) -> tuple[Path, Path]:
     dcfg = cfg.distill["dataset"]
     keep_think = cfg.distill["teach"]["keep_think_in_target"]
@@ -70,6 +75,13 @@ def build(cfg: Config, skip_decontam: bool = False) -> tuple[Path, Path]:
         for t in _eval_texts():
             decon.add(t)
         print(f"  {len(decon.index)} eval n-grams")
+
+    # Over-length samples are dropped, not truncated: the trainer would cut the
+    # target mid-answer, which teaches the model to stop before finishing.
+    from ..mlxutil import load_tokenizer
+
+    tok = load_tokenizer(cfg.student_base())
+    cap = dcfg["max_seq_len"]
 
     kept: dict[str, list[dict]] = {}
     stats: Counter = Counter()
@@ -85,18 +97,25 @@ def build(cfg: Config, skip_decontam: bool = False) -> tuple[Path, Path]:
                 if not ok:
                     stats[f"reject:{why.split(':')[0]}"] += 1
                     continue
+                if _too_long(cfg, rec, keep_think, cap, tok):
+                    stats["reject:too_long"] += 1
+                    continue
                 kept.setdefault(rec["domain"], []).append(rec)
                 stats["kept"] += 1
 
-    # Rebalance to the configured mixture, capped by the scarcest domain.
+    # Rebalance toward the configured mixture without throwing data away.
+    # The scale is set by the domain that is *most* over-supplied relative to
+    # its share, so every other domain contributes everything it has, capped at
+    # its proportional slice. Sizing from the scarcest domain instead would let
+    # a handful of samples in one domain discard thousands in another.
     mix = dcfg["mix"]
-    budget = min(
-        (len(v) / mix[k] for k, v in kept.items() if mix.get(k)),
+    scale = max(
+        (len(v) / mix[k] for k, v in kept.items() if mix.get(k) and v),
         default=0,
     )
     samples: list[dict] = []
     for domain, recs in kept.items():
-        n = int(budget * mix.get(domain, 0))
+        n = min(len(recs), int(scale * mix.get(domain, 0))) if mix.get(domain) else len(recs)
         rng.shuffle(recs)
         samples += recs[:n]
         stats[f"mix:{domain}"] = n
