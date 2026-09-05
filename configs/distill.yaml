@@ -1,0 +1,79 @@
+# Sequence-level (on-policy-free) distillation config.
+# Stage order: prompts -> teach -> dataset -> train -> fuse -> quantize -> eval
+
+seed: 17
+out_dir: runs/v1
+
+prompts:
+  # Source pools. Everything here must be disjoint from the eval sets;
+  # `dataset` re-checks with n-gram decontamination against MMLU test /
+  # TruthfulQA / HumanEval before writing the training files.
+  knowledge:
+    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 6000, kind: mcq}
+    - {hf: allenai/ai2_arc, config: ARC-Challenge, split: train, n: 1000, kind: mcq}
+    - {hf: allenai/openbookqa, config: main, split: train, n: 1000, kind: mcq}
+  truthfulness:
+    # TruthfulQA itself is eval-only (817 items, no train split) -- never sampled.
+    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 3000, kind: qa}
+    - {hf: allenai/sciq, config: default, split: train, n: 1500, kind: mcq}
+  code:
+    - {hf: google-research-datasets/mbpp, config: full, split: train, n: 374, kind: code}
+    - {hf: google-research-datasets/mbpp, config: full, split: prompt, n: 10, kind: code}
+    - {hf: m-a-p/CodeFeedback-Filtered-Instruction, config: default, split: train, n: 4000, kind: code_free}
+
+teach:
+  batch_size: 8          # mlx batched generation
+  think: true            # keep teacher reasoning traces in the target
+  keep_think_in_target: true
+  max_retries: 2
+
+dataset:
+  # Rejection sampling: only keep samples whose answer is verifiably right.
+  verify_mcq: true       # teacher letter must match gold
+  verify_code: true      # generated code must pass the dataset's own tests
+  verify_qa: true        # normalized-substring match against gold aliases
+  decontaminate_ngram: 13
+  max_seq_len: 4096
+  valid_frac: 0.02
+  mix:                   # target proportions of the final training set
+    knowledge: 0.40
+    truthfulness: 0.25
+    code: 0.35
+
+train:
+  # Full FT of a 9B in bf16 needs ~110 GB with AdamW; on a 64 GB M4 Pro we
+  # train high-rank LoRA over the bf16 base instead, then fuse.
+  fine_tune_type: lora
+  num_layers: 32          # -1 = all
+  rank: 64
+  scale: 16.0
+  dropout: 0.05
+  batch_size: 2
+  iters: 4000
+  learning_rate: 5.0e-5
+  lr_schedule: cosine_decay
+  warmup: 100
+  max_seq_length: 4096
+  grad_checkpoint: true
+  steps_per_eval: 200
+  save_every: 250
+  mask_prompt: true
+
+quantize:
+  # mlx-lm baseline quants for A/B against the oQ series.
+  variants:
+    - {name: q8, bits: 8, group_size: 64}
+    - {name: q4, bits: 4, group_size: 64}
+  # oQ4/oQ8/oQ3 are produced by an external recipe; set the command template
+  # here ({src} {dst} substituted) and `odistil quantize --recipe oq4` will call it.
+  recipes:
+    oq4: null
+    oq8: null
+    oq3: null
+
+eval:
+  benchmarks: [mmlu, truthfulqa, humaneval]
+  mmlu_sample: 1000       # same 1000-item sample as the baseline table
+  think: true
+  max_tokens: 2048
+  temp: 0.0

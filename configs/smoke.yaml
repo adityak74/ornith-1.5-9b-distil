@@ -1,0 +1,56 @@
+# Tiny end-to-end smoke config: small datasets, a handful of items, 20 iters.
+#   uv run odistil --distill-config configs/smoke.yaml prompts
+seed: 17
+out_dir: runs/smoke
+
+prompts:
+  knowledge:
+    - {hf: allenai/openbookqa, config: main, split: train, n: 8, kind: mcq}
+  truthfulness:
+    - {hf: allenai/sciq, config: default, split: train, n: 8, kind: mcq}
+  code:
+    - {hf: google-research-datasets/mbpp, config: full, split: train, n: 8, kind: code}
+
+teach:
+  batch_size: 4
+  think: true
+  keep_think_in_target: true
+  max_retries: 1
+
+dataset:
+  verify_mcq: true
+  verify_code: true
+  verify_qa: true
+  decontaminate_ngram: 13
+  max_seq_len: 2048
+  valid_frac: 0.2
+  mix: {knowledge: 0.4, truthfulness: 0.25, code: 0.35}
+
+train:
+  fine_tune_type: lora
+  num_layers: 8
+  rank: 8
+  scale: 16.0
+  dropout: 0.0
+  batch_size: 1
+  iters: 20
+  learning_rate: 1.0e-4
+  lr_schedule: cosine_decay
+  warmup: 2
+  max_seq_length: 2048
+  grad_checkpoint: true
+  steps_per_eval: 10
+  save_every: 10
+  mask_prompt: true
+
+quantize:
+  variants:
+    - {name: q4, bits: 4, group_size: 64}
+  recipes: {oq4: null}
+
+eval:
+  benchmarks: [humaneval]
+  mmlu_sample: 20
+  think: true
+  max_tokens: 512
+  temp: 0.0

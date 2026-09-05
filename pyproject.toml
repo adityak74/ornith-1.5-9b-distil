@@ -1,0 +1,28 @@
+[project]
+name = "odistil"
+version = "0.1.0"
+description = "Two-teacher distillation of Ornith-1.5-9B (Qwen3.6-35B-A3B for knowledge/truthfulness, Ornith-1.5-35B-A3B for code) on Apple Silicon / MLX"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "mlx>=0.29",
+    "mlx-lm>=0.28",
+    "datasets>=3.0",
+    "huggingface-hub>=0.34",
+    "transformers>=4.56",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "numpy>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+odistil = "odistil.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100

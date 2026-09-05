@@ -1,0 +1,30 @@
+# Model registry. Repo ids are HuggingFace ids; `local` overrides with a path on disk.
+
+student:
+  base:            # full-precision student we actually train
+    repo: ornith-ai/Ornith-1.5-9B-MLX
+    local: null
+  quantized:       # released student variants (eval targets)
+    oq8: ornith-ai/Ornith-1.5-9B-MLX-oQ8
+    oq4: ornith-ai/Ornith-1.5-9B-MLX-oQ4
+    oq3: ornith-ai/Ornith-1.5-9B-MLX-oQ3
+
+teachers:
+  knowledge:       # MMLU / TruthfulQA-style: strongest general teacher
+    repo: lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit
+    local: null
+    domains: [knowledge, reasoning, truthfulness]
+    max_tokens: 2048
+    temp: 0.6
+    top_p: 0.95
+  code:            # matches Qwen on HumanEval at ~4.6x the throughput
+    repo: ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
+    local: null
+    domains: [code, agentic, tools]
+    max_tokens: 2048
+    temp: 0.4
+    top_p: 0.95
+
+# Verified 2026-09-04: student and both teachers share an identical 248044-token
+# vocabulary (same token->id map), so top-k logit distillation is viable (v2).
+# The oQ* student variants below are not on the Hub -- set local paths.

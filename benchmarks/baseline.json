@@ -1,0 +1,45 @@
+{
+  "measured_on": "2026-09-04",
+  "hardware": "Apple M4 Pro, 64 GB",
+  "protocol": {
+    "mmlu": {"mode": "sample", "n": 1000, "of": 14042},
+    "truthfulqa": {"mode": "full", "n": 817},
+    "humaneval": {"mode": "full", "n": 164},
+    "think": true
+  },
+  "models": {
+    "Ornith-1.5-9B-MLX-oQ4": {
+      "mmlu":       {"accuracy": 0.780, "correct": 780, "total": 1000, "seconds": 15261.7},
+      "truthfulqa": {"accuracy": 0.807, "correct": 659, "total": 817,  "seconds": 9488.8},
+      "humaneval":  {"accuracy": 0.878, "correct": 144, "total": 164,  "seconds": 4171.1}
+    },
+    "Ornith-1.5-9B-MLX-oQ8": {
+      "mmlu":       {"accuracy": 0.831, "correct": 831, "total": 1000, "seconds": 16434.2},
+      "truthfulqa": {"accuracy": 0.807, "correct": 659, "total": 817,  "seconds": 8513.4},
+      "humaneval":  {"accuracy": 0.884, "correct": 145, "total": 164,  "seconds": 4796.6}
+    },
+    "Ornith-1.5-9B-MLX-oQ3": {
+      "mmlu":       {"accuracy": 0.666, "correct": 666, "total": 1000, "seconds": 34084.6},
+      "truthfulqa": {"accuracy": 0.676, "correct": 552, "total": 817,  "seconds": 20159.3},
+      "humaneval":  {"accuracy": 0.720, "correct": 118, "total": 164,  "seconds": 5584.8}
+    },
+    "Ornith-1.5-9B-MLX": {
+      "mmlu":       {"accuracy": 0.826, "correct": 826, "total": 1000, "seconds": 33507.4},
+      "truthfulqa": {"accuracy": 0.805, "correct": 658, "total": 817,  "seconds": 22649.1},
+      "humaneval":  {"accuracy": 0.915, "correct": 150, "total": 164,  "seconds": 9994.4}
+    },
+    "Qwen3.6-35B-A3B-MLX-4bit": {
+      "mmlu":       {"accuracy": 0.893, "correct": 893, "total": 1000, "seconds": 10718.5},
+      "truthfulqa": {"accuracy": 0.892, "correct": 729, "total": 817,  "seconds": 6363.2},
+      "humaneval":  {"accuracy": 0.933, "correct": 153, "total": 164,  "seconds": 4804.5}
+    },
+    "Ornith-1.5-35B-A3B-MLX-4bit": {
+      "mmlu":       {"accuracy": 0.830, "correct": 830, "total": 1000, "seconds": 5974.7},
+      "truthfulqa": {"accuracy": 0.864, "correct": 706, "total": 817,  "seconds": 2296.8},
+      "humaneval":  {"accuracy": 0.933, "correct": 153, "total": 164,  "seconds": 1043.2}
+    }
+  },
+  "targets": {
+    "distilled-9B": {"mmlu": [0.86, 0.89], "truthfulqa": [0.86, 0.89], "humaneval": [0.92, 0.94]}
+  }
+}

@@ -1,0 +1,76 @@
+"""Config loading and run-directory helpers."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+CONFIGS = ROOT / "configs"
+
+
+def _load(path: Path) -> dict[str, Any]:
+    with path.open() as f:
+        return yaml.safe_load(f)
+
+
+@dataclass
+class Config:
+    models: dict[str, Any]
+    distill: dict[str, Any]
+    root: Path = ROOT
+
+    @classmethod
+    def load(cls, models: str | Path | None = None, distill: str | Path | None = None) -> Config:
+        return cls(
+            models=_load(Path(models or CONFIGS / "models.yaml")),
+            distill=_load(Path(distill or CONFIGS / "distill.yaml")),
+        )
+
+    # -- paths ---------------------------------------------------------------
+    @property
+    def out_dir(self) -> Path:
+        p = self.root / self.distill["out_dir"]
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def path(self, *parts: str) -> Path:
+        p = self.out_dir.joinpath(*parts)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    # -- models --------------------------------------------------------------
+    def student_base(self) -> str:
+        s = self.models["student"]["base"]
+        return s["local"] or s["repo"]
+
+    def teacher(self, name: str) -> dict[str, Any]:
+        t = dict(self.models["teachers"][name])
+        t["path"] = t.get("local") or t["repo"]
+        t["name"] = name
+        return t
+
+    def teacher_for(self, domain: str) -> dict[str, Any]:
+        for name in self.models["teachers"]:
+            t = self.teacher(name)
+            if domain in t["domains"]:
+                return t
+        raise KeyError(f"no teacher declares domain {domain!r}")
+
+    def model_ref(self, ref: str) -> str:
+        """Resolve 'student', 'student:oq4', 'teacher:code', a repo id, or a path."""
+        if ref == "student":
+            return self.student_base()
+        if ref.startswith("student:"):
+            return self.models["student"]["quantized"][ref.split(":", 1)[1]]
+        if ref.startswith("teacher:"):
+            return self.teacher(ref.split(":", 1)[1])["path"]
+        return ref
+
+
+def hf_home() -> Path:
+    return Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
