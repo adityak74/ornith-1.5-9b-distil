@@ -1,6 +1,7 @@
 """odistil -- two-teacher distillation pipeline for Ornith-1.5-9B.
 
     odistil check                      environment, models, tokenizer compatibility
+    odistil status                     progress of every stage
     odistil prompts [--domain code]    stage 1: build the prompt pool
     odistil teach   [--teacher code]   stage 2: generate teacher traces
     odistil dataset                    stage 3: verify + decontaminate + mix
@@ -28,6 +29,12 @@ def cmd_check(args) -> int:
     from .check import run
 
     return run(_cfg(args), download=args.download)
+
+
+def cmd_status(args) -> int:
+    from .status import run
+
+    return run(_cfg(args))
 
 
 def cmd_prompts(args) -> int:
@@ -107,6 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("check", help="preflight: env, models, tokenizer compatibility")
     s.add_argument("--download", action="store_true", help="fetch missing models from the Hub")
     s.set_defaults(fn=cmd_check)
+
+    s = sub.add_parser("status", help="where the pipeline is")
+    s.set_defaults(fn=cmd_status)
 
     s = sub.add_parser("prompts", help="stage 1: build the prompt pool")
     s.add_argument("--domain", action="append", help="restrict to a domain (repeatable)")
