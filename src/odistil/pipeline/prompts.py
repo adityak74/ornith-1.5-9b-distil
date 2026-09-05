@@ -90,8 +90,8 @@ def _normalize(src: dict, row: dict, idx: int) -> dict | None:
 def build(cfg: Config, domains: list[str] | None = None, limit: int | None = None) -> Path:
     from datasets import load_dataset
 
-    rng = random.Random(cfg.distill["seed"])
-    random.seed(cfg.distill["seed"])
+    seed = cfg.distill["seed"]
+    random.seed(seed)
     out = cfg.path("prompts.jsonl")
     n_written = 0
 
@@ -104,7 +104,10 @@ def build(cfg: Config, domains: list[str] | None = None, limit: int | None = Non
                 want = min(src["n"], limit) if limit else src["n"]
                 print(f"  {domain:<13} {src['hf']}:{src['split']}  -> {want}")
                 ds = load_dataset(src["hf"], src.get("config"), split=src["split"])
-                idxs = rng.sample(range(len(ds)), k=min(want, len(ds)))
+                # Seed per source: re-sizing one pool must not reshuffle the others,
+                # or previously generated traces stop matching by id.
+                src_rng = random.Random(f"{seed}:{src['hf']}:{src['split']}")
+                idxs = src_rng.sample(range(len(ds)), k=min(want, len(ds)))
                 for i in idxs:
                     rec = _normalize(src, ds[i], i)
                     if rec:

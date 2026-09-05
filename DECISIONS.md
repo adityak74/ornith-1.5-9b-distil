@@ -85,3 +85,42 @@ block (`ast.parse`). That is weak, but it removes truncated traces and
 prose-only answers, which are the failure modes that actually poison a student.
 Everything else — MCQ letters, QA aliases, MBPP tests — is verified against
 gold or by execution.
+
+## 6. Dropped CodeFeedback; MBPP test/validation used as training data
+
+Measured after 512 code traces, rather than assumed:
+
+| source | traces | usable | how verified |
+|---|---:|---:|---|
+| MBPP | 384 | **74%** | executed against the dataset's own tests |
+| CodeFeedback | 128 | **24%** | syntax only — 53% truncated to nothing |
+
+CodeFeedback is free-form instruction data, so its answers are long, frequently
+run past the 2048-token budget, and cannot be checked against anything. Three
+quarters of the compute spent on it was producing nothing usable.
+
+Dropped it, and replaced the volume with **the rest of MBPP**: our code
+benchmark is HumanEval, so MBPP's test (500) and validation (90) splits are
+training data, not eval data. That takes the code slice from 384 verified plus
+1,500 unverifiable prompts to 974 prompts that all ship with executable tests,
+for less total generation time. The decontamination pass still runs against
+HumanEval regardless.
+
+Also switched to a per-source RNG seed (`seed:dataset:split`), so re-sizing one
+pool no longer reshuffles the others — without it, every trace already
+generated would have stopped matching by id and been regenerated.
+
+## 7. Generation budget: ~3,000 traces, not 7,284
+
+Measured throughput is 9-14 s per trace (the teachers reason for a median of
+~900 tokens). The original 7,284-prompt pool was a 15-20 hour generation job.
+Cut to 3,974 prompts — 2,000 knowledge, 1,000 truthfulness, 974 code — which is
+roughly 10 hours and, after rejection sampling, should yield ~2,700 verified
+training samples. That is enough for 2-3 epochs of rank-64 LoRA, which is the
+regime where this kind of distillation gets most of its gain.
+
+## 8. Baseline established (this harness, not oMLX)
+
+**bf16 base: 145/164 = 88.4% HumanEval**, 15 items still truncated at the 4096
+budget. That is the number the distilled model has to beat; oMLX's 91.5% for
+the same weights is a different measurement and is not the target.

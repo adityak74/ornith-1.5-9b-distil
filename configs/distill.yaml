@@ -9,20 +9,25 @@ prompts:
   # `dataset` re-checks with n-gram decontamination against MMLU test /
   # TruthfulQA / HumanEval before writing the training files.
   knowledge:
-    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 2500, kind: mcq}
-    - {hf: allenai/ai2_arc, config: ARC-Challenge, split: train, n: 500, kind: mcq}
-    - {hf: allenai/openbookqa, config: main, split: train, n: 400, kind: mcq}
+    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 1500, kind: mcq}
+    - {hf: allenai/ai2_arc, config: ARC-Challenge, split: train, n: 300, kind: mcq}
+    - {hf: allenai/openbookqa, config: main, split: train, n: 200, kind: mcq}
   truthfulness:
     # TruthfulQA itself is eval-only (817 items, no train split) -- never sampled.
-    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 1200, kind: qa}
-    - {hf: allenai/sciq, config: default, split: train, n: 800, kind: mcq}
+    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 600, kind: qa}
+    - {hf: allenai/sciq, config: default, split: train, n: 400, kind: mcq}
   code:
+    # Every MBPP split is fair game: our code eval is HumanEval, so MBPP test is
+    # training data, not eval data, and all of it ships with executable tests.
+    # CodeFeedback was dropped after measurement -- 24% of its traces were usable
+    # against MBPP's 74%, and none of them verifiable. See DECISIONS.md 6.
     - {hf: google-research-datasets/mbpp, config: full, split: train, n: 374, kind: code}
+    - {hf: google-research-datasets/mbpp, config: full, split: test, n: 500, kind: code}
+    - {hf: google-research-datasets/mbpp, config: full, split: validation, n: 90, kind: code}
     - {hf: google-research-datasets/mbpp, config: full, split: prompt, n: 10, kind: code}
-    - {hf: m-a-p/CodeFeedback-Filtered-Instruction, config: default, split: train, n: 1500, kind: code_free}
 
 teach:
-  batch_size: 8          # mlx batched generation
+  batch_size: 16         # mlx batched generation
   think: true            # keep teacher reasoning traces in the target
   keep_think_in_target: true
   max_retries: 2
