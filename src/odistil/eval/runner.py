@@ -83,6 +83,7 @@ def run_task(
         "truncated": sum(r.get("truncated", False) for r in recs),
         "seconds": round(sum(r["seconds"] for r in recs) or time.time() - t0, 1),
         "think": think,
+        "max_tokens": max_tokens,
     }
     trunc = summary["truncated"]
     note = f"  [{trunc} truncated before answering -- raise eval.max_tokens]" if trunc else ""
@@ -123,13 +124,16 @@ def run(
         task = builder(sample=ecfg["mmlu_sample"], seed=cfg.distill["seed"]) if name == "mmlu" else builder()
         if sample:
             task.items = subsample(task.items, sample, cfg.distill["seed"])
+        budget = ecfg["max_tokens"]
+        if isinstance(budget, dict):
+            budget = budget.get(name, budget["default"])
         summaries.append(
             run_task(
                 model_path,
                 task,
                 out_dir,
                 think=ecfg["think"],
-                max_tokens=ecfg["max_tokens"],
+                max_tokens=budget,
                 temp=ecfg["temp"],
                 limit=limit,
             )

@@ -88,10 +88,23 @@ def truthfulqa() -> Task:
 
 
 def _he_score(item: Item, out: str) -> bool:
+    """Run the model's code against the problem's tests.
+
+    The original prompt is prepended as a preamble: it carries the imports and
+    any helper the problem defines (`encode_cyclic`, `encode_shift`), which a
+    chat model naturally omits when asked for "the function". Without it, three
+    correct solutions failed with NameError. The model's own definition comes
+    after the stub, so it wins.
+    """
     from ..codeexec import extract_code
 
     program = "\n".join(
-        [extract_code(out), item.gold["test"], f"check({item.gold['entry_point']})"]
+        [
+            item.gold["prompt"],
+            extract_code(out),
+            item.gold["test"],
+            f"check({item.gold['entry_point']})",
+        ]
     )
     ok, _ = run_program(program, timeout=15.0)
     return ok
@@ -105,7 +118,7 @@ def humaneval() -> Task:
         Item(
             row["task_id"],
             CODE_TMPL.format(prompt=row["prompt"]),
-            {"test": row["test"], "entry_point": row["entry_point"]},
+            {"test": row["test"], "entry_point": row["entry_point"], "prompt": row["prompt"]},
         )
         for row in ds
     ]

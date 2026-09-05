@@ -52,5 +52,5 @@ eval:
   benchmarks: [humaneval]
   mmlu_sample: 20
   think: true
-  max_tokens: 512
+  max_tokens: {default: 512}
   temp: 0.0
