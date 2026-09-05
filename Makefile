@@ -15,8 +15,14 @@ fuse:;    uv run odistil fuse
 quant-q4:; uv run odistil quantize --variant q4
 quant-q8:; uv run odistil quantize --variant q8
 
-eval-baseline:    ## re-measure the shipped oQ4 student
+eval-base:        ## the training starting point: bf16 student, full protocol
+	uv run odistil eval --model student --tag base-bf16
+
+eval-baseline:    ## re-measure the shipped oQ4 student, full protocol
 	uv run odistil eval --model student:oq4 --tag baseline-oq4
+
+eval-quick:       ## iteration run: seeded 250-item subsets (MODEL=... TAG=...)
+	uv run odistil eval --model $(MODEL) --sample 250 --tag $(TAG)
 
 eval-fused:       ## measure the distilled bf16 student
 	uv run odistil eval --model runs/v1/fused --tag distilled-bf16

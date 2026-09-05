@@ -90,11 +90,26 @@ def run_task(
     return summary
 
 
+def subsample(items: list, n: int, seed: int) -> list:
+    """A seeded random subset, stable across runs and models.
+
+    `--limit` takes a prefix, which is biased whenever the source is ordered
+    (TruthfulQA is grouped by category); use this for iteration runs.
+    """
+    import random
+
+    if n >= len(items):
+        return items
+    picked = random.Random(seed).sample(range(len(items)), n)
+    return [items[i] for i in sorted(picked)]
+
+
 def run(
     cfg: Config,
     model_ref: str,
     benchmarks: list[str] | None = None,
     limit: int | None = None,
+    sample: int | None = None,
     tag: str | None = None,
 ) -> Path:
     ecfg = cfg.distill["eval"]
@@ -106,6 +121,8 @@ def run(
     for name in benchmarks or ecfg["benchmarks"]:
         builder = REGISTRY[name]
         task = builder(sample=ecfg["mmlu_sample"], seed=cfg.distill["seed"]) if name == "mmlu" else builder()
+        if sample:
+            task.items = subsample(task.items, sample, cfg.distill["seed"])
         summaries.append(
             run_task(
                 model_path,

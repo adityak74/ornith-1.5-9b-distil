@@ -74,7 +74,8 @@ def cmd_quantize(args) -> int:
 def cmd_eval(args) -> int:
     from .eval.runner import run
 
-    run(_cfg(args), args.model, benchmarks=args.benchmark, limit=args.limit, tag=args.tag)
+    run(_cfg(args), args.model, benchmarks=args.benchmark, limit=args.limit,
+        sample=args.sample, tag=args.tag)
     return 0
 
 
@@ -128,7 +129,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--model", required=True,
                    help="student | student:oq4 | teacher:code | repo id | path")
     s.add_argument("--benchmark", action="append", help="mmlu | truthfulqa | humaneval")
-    s.add_argument("--limit", type=int, help="cap items per benchmark")
+    s.add_argument("--limit", type=int, help="first N items per benchmark (debugging)")
+    s.add_argument("--sample", type=int,
+                   help="seeded random subset per benchmark -- use this for iteration runs")
     s.add_argument("--tag", help="name for the results directory")
     s.set_defaults(fn=cmd_eval)
 
