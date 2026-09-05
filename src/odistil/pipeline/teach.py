@@ -21,6 +21,19 @@ SYSTEM = (
 )
 
 
+def _gen(teacher: dict, tconf: dict, bs: int, items: list[dict], budget: int):
+    return generate_batch(
+        teacher["path"],
+        [c["prompt"] for c in items],
+        system=SYSTEM,
+        max_tokens=budget,
+        temp=teacher["temp"],
+        top_p=teacher["top_p"],
+        think=tconf["think"],
+        batch_size=bs,
+    )
+
+
 def _done_ids(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -53,19 +66,27 @@ def run(cfg: Config, teachers: list[str] | None = None, limit: int | None = None
         print(f"[{tname}] {t['path']}: {len(todo)} to generate ({len(done)} cached)")
 
         bs = tconf["batch_size"]
+        retries = tconf.get("max_retries", 0)
         with out.open("a") as f:
             for i in range(0, len(todo), bs):
                 chunk = todo[i : i + bs]
-                comps = generate_batch(
-                    t["path"],
-                    [c["prompt"] for c in chunk],
-                    system=SYSTEM,
-                    max_tokens=t["max_tokens"],
-                    temp=t["temp"],
-                    top_p=t["top_p"],
-                    think=tconf["think"],
-                    batch_size=bs,
-                )
+
+                comps = _gen(t, tconf, bs, chunk, t["max_tokens"])
+
+                # A trace that ran out of budget mid-reasoning has no answer and
+                # would be thrown away by the verifier -- the generation time is
+                # already spent, so give those items one longer attempt.
+                for attempt in range(retries):
+                    stuck = [j for j, c in enumerate(comps) if c.truncated]
+                    if not stuck:
+                        break
+                    budget = int(t["max_tokens"] * 1.5 ** (attempt + 1))
+                    print(f"  retrying {len(stuck)} truncated at {budget} tokens")
+                    redone = _gen(t, tconf, bs, [chunk[j] for j in stuck], budget)
+                    for j, c in zip(stuck, redone, strict=True):
+                        if not c.truncated:
+                            comps[j] = c
+
                 for rec, comp in zip(chunk, comps, strict=True):
                     f.write(
                         json.dumps(
@@ -78,6 +99,7 @@ def run(cfg: Config, teachers: list[str] | None = None, limit: int | None = None
                                 "raw": comp.raw,
                                 "gen_tokens": comp.tokens,
                                 "gen_seconds": round(comp.seconds, 2),
+                                "truncated": comp.truncated,
                             }
                         )
                         + "\n"
