@@ -93,9 +93,41 @@ truthfulness is taught indirectly via TriviaQA and SciQ plus abstention-style
 prompting) and HumanEval are indexed as 13-grams; any training prompt sharing
 one is dropped before writing `train.jsonl`.
 
+## What the checkpoints actually are (verified on disk)
+
+Everything lives on `/Volumes/SATECHI/.omlx` (the oMLX model dir from
+`~/.omlx/settings.json`), wired into `configs/models.yaml`:
+
+- `ornith-ai/Ornith-1.5-9B-MLX` — unquantized **bf16**, hidden 4096,
+  `model_type: qwen3_5`, 17 GB. Trainable as-is.
+- Both teachers present at 4-bit, 18–19 GB each.
+- `Ornith-1.5-9B-MLX-oQ{8,4,3,2}` — the shipped students, not on the Hub.
+
+**oQ is a mixed-bit affine scheme, and the map is recoverable.** oQ4 is 4-bit
+affine at group size 64 with 120 individual modules promoted: 110 to 5 bits,
+7 to 6, 3 to 8 — concentrated in the `linear_attn` projections (`out_proj`,
+`in_proj_{a,b,z}`), plus some `mlp.down_proj` and attention heads. oQ3 and oQ2
+use the same shape at a lower base. `odistil quantize --variant oq4` reads that
+map straight out of the reference checkpoint's `config.json` and replays it on
+the distilled model via `mlx_lm.convert(quant_predicate=...)`, so the final
+comparison against the shipped oQ4 is apples-to-apples rather than
+"our q4 vs their oQ4".
+
+That the promoted modules cluster on `linear_attn` is also a hint about where
+the 4.6-point bf16→oQ4 MMLU loss lives — a v2 quantization experiment can push
+those specific modules higher and measure MMLU alone.
+
+## Throughput note
+
+The harness batches generation (8 prompts at a time), which is much faster than
+the baseline runs: 16 HumanEval items on oQ4 took 98 s (~6 s/item) against the
+baseline's ~25 s/item. Full-suite estimate per model is roughly 1.5–2 h rather
+than 8 h, so re-measuring every variant through this harness is affordable.
+
 ## Order of work
 
-1. `odistil check --download` — ~90 GB of weights, plus the tokenizer verdict.
+1. `odistil check` — confirms the external volume is mounted and every model is
+   present (nothing to download; all six checkpoints are already on disk).
 2. Re-run the oQ4 baseline through *this* harness (`make eval-baseline`) so the
    numbers above and the post-distillation numbers are same-harness comparable.
 3. Code slice first: it is the cheapest teacher and the target closest to reach.
@@ -110,10 +142,14 @@ one is dropped before writing `train.jsonl`.
 
 ## Open questions
 
-- What produces the oQ4/oQ8/oQ3 artifacts? Wire the command into
-  `quantize.recipes` in `configs/distill.yaml` so the last stage is reproducible.
+- ~~What produces the oQ artifacts?~~ The per-module bit map is reproducible
+  from the reference configs (above). If the real oQ pipeline does more than
+  pick bit widths — calibration, error feedback, activation-aware scaling —
+  wire that command into `quantize.recipes` so stage 6 matches it exactly.
 - ~~Is the 9B on the Hub trainable?~~ Confirmed: `ornith-ai/Ornith-1.5-9B-MLX`
   is unquantized bf16, hidden size 4096. Good to train against.
-- The oQ4/oQ8/oQ3 student variants are not on the Hub (404) and are not on this
-  machine. Point `models.yaml → student.quantized.*` at their local paths, or
-  they have to be rebuilt before `make eval-baseline` can re-measure them.
+- MMLU truncation: ~1 in 8 sanity items hit the 2048-token cap before
+  answering. Worth measuring the truncation rate on the full oQ4 baseline run
+  before assuming the 78.0 → 86+ gap is all knowledge.
+- The external volume has only 67 GB free; `runs/` (fused bf16 ≈ 17 GB plus
+  quants) stays on the internal disk, which has 251 GB.

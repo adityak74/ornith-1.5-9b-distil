@@ -64,16 +64,21 @@ quantize:
   variants:
     - {name: q8, bits: 8, group_size: 64}
     - {name: q4, bits: 4, group_size: 64}
-  # oQ4/oQ8/oQ3 are produced by an external recipe; set the command template
-  # here ({src} {dst} substituted) and `odistil quantize --recipe oq4` will call it.
+  # `--variant oq4|oq3|oq2` reproduces the mixed-bit map read straight out of
+  # the corresponding checkpoint in models.yaml (oQ4 = 4-bit affine g64 with 120
+  # modules promoted to 5/6/8 bits). oq8 is uniform 8-bit, so use --variant q8.
+  # Set a command template here ({src}/{dst} substituted) to override with an
+  # external quantizer instead.
   recipes:
     oq4: null
-    oq8: null
     oq3: null
+    oq2: null
 
 eval:
   benchmarks: [mmlu, truthfulqa, humaneval]
   mmlu_sample: 1000       # same 1000-item sample as the baseline table
   think: true
-  max_tokens: 2048
+  max_tokens: 2048        # matches the baseline budget; the runner reports how
+                          # many items were truncated before answering, which on
+                          # MMLU is a real (non-trivial) share of the losses
   temp: 0.0

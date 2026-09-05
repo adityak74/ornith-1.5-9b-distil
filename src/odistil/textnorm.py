@@ -6,7 +6,7 @@ import re
 import string
 
 ANSWER_LINE = re.compile(r"answer\s*[::]\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-LETTER = re.compile(r"\b([A-J])\b")
+LETTER = re.compile(r"\b([A-Z])\b")
 
 _ARTICLES = re.compile(r"\b(a|an|the)\b")
 _PUNCT = str.maketrans("", "", string.punctuation)
@@ -23,7 +23,7 @@ def final_answer(text: str) -> str | None:
     return m[-1].strip() if m else None
 
 
-def final_letter(text: str, n_choices: int = 10) -> str | None:
+def final_letter(text: str, n_choices: int = 26) -> str | None:
     """Last 'Answer: X' line, else the last standalone letter in the tail."""
     ans = final_answer(text)
     valid = set(string.ascii_uppercase[:n_choices])

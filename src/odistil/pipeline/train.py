@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from ..config import Config
@@ -83,21 +84,76 @@ def fuse(cfg: Config, out: Path | None = None) -> Path:
     return out
 
 
+def oq_predicate(reference: Path) -> tuple[dict, Callable]:
+    """Rebuild an oQ mixed-bit map from an existing oQ checkpoint's config.
+
+    The oQ recipe is affine quantization at a base width with 120 individual
+    modules promoted above it -- in oQ4: 110 at 5 bits, 7 at 6 and 3 at 8,
+    concentrated in the `linear_attn` projections (out_proj, in_proj_{a,b,z})
+    with some `mlp.down_proj` and `self_attn` heads. Reusing the exact map is
+    what makes a distilled checkpoint comparable to the shipped oQ4.
+    """
+    conf = json.loads((reference / "config.json").read_text())
+    q = conf.get("quantization") or {}
+    base = {k: v for k, v in q.items() if not isinstance(v, dict)}
+    per = {k: v for k, v in q.items() if isinstance(v, dict)}
+    stripped = {k.removeprefix("language_model."): v for k, v in per.items()}
+    hits = {"n": 0}
+
+    def predicate(path: str, module, config) -> bool | dict:
+        spec = per.get(path) or stripped.get(path.removeprefix("language_model."))
+        if spec:
+            hits["n"] += 1
+            return dict(spec)
+        return True
+
+    predicate.hits = hits
+    predicate.per_module = per
+    return base, predicate
+
+
 def quantize(cfg: Config, variant: str, src: Path | None = None) -> Path:
     src = src or cfg.path("fused")
     qcfg = cfg.distill["quantize"]
     recipe = (qcfg.get("recipes") or {}).get(variant)
     dst = cfg.path("quant", variant)
 
-    if recipe:  # external oQ recipe
+    if recipe:  # external command, if one is configured
         cmd = recipe.format(src=str(src), dst=str(dst))
         print("+", cmd)
         subprocess.run(cmd, shell=True, check=True)
         return dst
 
+    # oQ variants: mirror the mixed-bit map of the shipped checkpoint.
+    ref = (cfg.models["student"].get("quantized") or {}).get(variant)
+    if variant.startswith("oq") and ref and Path(ref).exists():
+        from mlx_lm.convert import convert
+
+        base, predicate = oq_predicate(Path(ref))
+        print(f"oQ map from {ref}: base {base['bits']}-bit g{base['group_size']}, "
+              f"{len(predicate.per_module)} promoted modules")
+        convert(
+            hf_path=str(src),
+            mlx_path=str(dst),
+            quantize=True,
+            q_bits=base["bits"],
+            q_group_size=base["group_size"],
+            q_mode=base.get("mode", "affine"),
+            quant_predicate=predicate,
+        )
+        n, want = predicate.hits["n"], len(predicate.per_module)
+        print(f"applied {n}/{want} promoted modules")
+        if n == 0 and want:
+            print("WARNING: no module names matched -- the fused model's tree differs "
+                  "from the reference; inspect the keys before trusting this checkpoint")
+        return dst
+
     spec = next((v for v in qcfg["variants"] if v["name"] == variant), None)
     if not spec:
-        raise SystemExit(f"unknown quantize variant {variant!r}; no recipe configured either")
+        raise SystemExit(
+            f"unknown quantize variant {variant!r}: not in quantize.variants, no recipe "
+            "configured, and no oQ reference checkpoint in models.yaml"
+        )
     cmd = [
         sys.executable, "-m", "mlx_lm", "convert",
         "--hf-path", str(src),

@@ -8,6 +8,7 @@ from pathlib import Path
 from ..config import Config
 
 BENCHES = ["mmlu", "truthfulqa", "humaneval"]
+FULL = {"mmlu": 1000, "truthfulqa": 817, "humaneval": 164}  # the baseline protocol
 
 
 def collect(cfg: Config) -> dict[str, dict]:
@@ -34,7 +35,7 @@ def table(cfg: Config, show_time: bool = False) -> str:
     rows = collect(cfg)
     targets = json.loads((cfg.root / "benchmarks" / "baseline.json").read_text())["targets"]
     w = max(len(n) for n in rows) + 2
-    head = f"{'Model':<{w}}" + "".join(f"{b.upper():>14}" for b in BENCHES)
+    head = f"{'Model':<{w}}" + "".join(f"{b.upper():>11}   " for b in BENCHES)
     lines = [head, "-" * len(head)]
     for name, res in rows.items():
         cells = []
@@ -42,15 +43,22 @@ def table(cfg: Config, show_time: bool = False) -> str:
             r = res.get(b)
             if not r:
                 cells.append(f"{'-':>14}")
-            elif show_time:
-                cells.append(f"{r['accuracy']:>8.1%} {r['seconds'] / 3600:>4.1f}h")
+                continue
+            # A partial run must not read as a full one.
+            mark = "" if r["total"] >= FULL[b] else f"~{r['total']}"
+            if show_time:
+                cells.append(f"{r['accuracy']:>7.1%}{mark:<3}{r['seconds'] / 3600:>4.1f}h")
             else:
-                cells.append(f"{r['accuracy']:>14.1%}")
+                cells.append(f"{r['accuracy']:>11.1%}{mark:<3}")
         lines.append(f"{name:<{w}}" + "".join(cells))
     lo, hi = "target (low)", "target (high)"
     for label, i in ((lo, 0), (hi, 1)):
-        cells = "".join(f"{targets['distilled-9B'][b][i]:>14.1%}" for b in BENCHES)
+        cells = "".join(f"{targets['distilled-9B'][b][i]:>11.1%}   " for b in BENCHES)
         lines.append(f"{label:<{w}}" + cells)
+    if any("~" in line for line in lines):
+        lines.append("")
+        lines.append("~n = partial run over n items; not comparable to the full protocol "
+                     "(1000 / 817 / 164)")
     return "\n".join(lines)
 
 

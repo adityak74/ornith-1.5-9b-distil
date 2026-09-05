@@ -23,6 +23,13 @@ def _cached(repo: str) -> bool:
         return False
 
 
+def _all_paths(cfg: Config) -> list[str]:
+    paths = [cfg.student_base()]
+    paths += [cfg.teacher(n)["path"] for n in cfg.models["teachers"]]
+    paths += list(cfg.models["student"].get("quantized", {}).values())
+    return paths
+
+
 def run(cfg: Config, download: bool = False) -> int:
     import mlx.core as mx
 
@@ -31,7 +38,15 @@ def run(cfg: Config, download: bool = False) -> int:
     mem = info.get("max_recommended_working_set_size", 0)
     print(f"recommended working set: {mem / GB:.0f} GB")
     free = shutil.disk_usage(Path.home()).free / GB
-    print(f"free disk: {free:.0f} GB  (need ~120 GB for weights + fused + quants)")
+    print(f"free disk (internal, holds runs/): {free:.0f} GB  "
+          "(need ~40 GB for the fused bf16 checkpoint + quants)")
+
+    # Weights live on an external volume; a missing mount looks exactly like a
+    # missing model otherwise.
+    vols = {Path(p).parents[-4] for p in _all_paths(cfg) if str(p).startswith("/Volumes/")}
+    for v in sorted(vols):
+        ok = v.exists()
+        print(f"volume {v}: {'mounted, ' + f'{shutil.disk_usage(v).free / GB:.0f} GB free' if ok else 'NOT MOUNTED'}")
 
     refs = [("student", cfg.student_base())] + [
         (f"teacher:{n}", cfg.teacher(n)["path"]) for n in cfg.models["teachers"]
@@ -56,6 +71,10 @@ def run(cfg: Config, download: bool = False) -> int:
         print("\nmissing models -- run `odistil check --download` or set `local:` paths "
               "in configs/models.yaml")
         return 1
+
+    print("\nquantized student variants (eval targets / oQ references):")
+    for name, path in (cfg.models["student"].get("quantized") or {}).items():
+        print(f"  {'ok ' if _local(path) or _cached(path) else 'MISS'}  {name:<16} {path}")
 
     print("\ntokenizer compatibility (decides whether logit distillation is possible):")
     from .mlxutil import tokenizer_fingerprint

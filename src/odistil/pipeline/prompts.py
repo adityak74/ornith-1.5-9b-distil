@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import json
 import random
+import string
 from pathlib import Path
 
 from ..config import Config
 
-LETTERS = "ABCDEFGHIJ"
+LETTERS = string.ascii_uppercase  # TruthfulQA MC1 goes up to 13 choices
 
 MCQ_TMPL = (
     "{question}\n\n{choices}\n\n"

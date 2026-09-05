@@ -15,10 +15,13 @@ Measured baselines: [`benchmarks/baseline.json`](benchmarks/baseline.json).
 ## Setup
 
 ```bash
-make setup            # uv sync (python 3.12, mlx, mlx-lm, datasets)
-make check            # env, metal, disk, models, tokenizer compatibility
-make check DOWNLOAD=1 # ...and fetch the ~90 GB of weights
+make setup   # uv sync (python 3.12, mlx, mlx-lm, datasets)
+make check   # volume mounted? models present? tokenizers compatible?
 ```
+
+All six checkpoints are already on the external volume `/Volumes/SATECHI/.omlx`
+(the oMLX model dir), wired into `configs/models.yaml` — nothing to download,
+but the volume has to be mounted. `runs/` stays on the internal disk.
 
 ## Pipeline
 
@@ -89,6 +92,9 @@ runs/        generated; gitignored
 - All three models share one 248,044-token vocabulary, so top-k logit
   distillation is possible as a v2 (see `docs/PLAN.md`); v1 is sequence-level
   with rejection sampling.
-- The oQ4/oQ8/oQ3 quantizer is external to this repo. Point
-  `quantize.recipes.oq4` in `configs/distill.yaml` at its command
-  (`{src}`/`{dst}` are substituted) and stage 6 will drive it.
+- `odistil quantize --variant oq4` reproduces the shipped oQ mixed-bit map
+  (4-bit affine g64 with 120 modules promoted to 5/6/8 bits, mostly
+  `linear_attn` projections) by reading it out of the reference checkpoint, so
+  the final number is comparable to the shipped oQ4 rather than to a generic q4.
+  Set `quantize.recipes.oq4` to a command if the real quantizer does more than
+  choose bit widths.

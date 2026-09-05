@@ -59,7 +59,8 @@ def run_task(
                     "id": it.id,
                     "correct": bool(task.score(it, comp.text)),
                     "output": comp.text,
-                    "think_tokens": len(comp.think or ""),
+                    "truncated": comp.truncated,
+                    "think_chars": len(comp.think or ""),
                     "tokens": comp.tokens,
                     "seconds": round(comp.seconds, 2),
                     "meta": it.meta,
@@ -79,10 +80,13 @@ def run_task(
         "total": len(recs),
         "correct": correct,
         "accuracy": round(correct / max(len(recs), 1), 4),
+        "truncated": sum(r.get("truncated", False) for r in recs),
         "seconds": round(sum(r["seconds"] for r in recs) or time.time() - t0, 1),
         "think": think,
     }
-    print(f"\n[{task.name}] {summary['accuracy']:.1%} ({correct}/{len(recs)})")
+    trunc = summary["truncated"]
+    note = f"  [{trunc} truncated before answering -- raise eval.max_tokens]" if trunc else ""
+    print(f"\n[{task.name}] {summary['accuracy']:.1%} ({correct}/{len(recs)}){note}")
     return summary
 
 
@@ -114,7 +118,17 @@ def run(
             )
         )
 
+    # Merge with whatever this tag already measured: running one benchmark at a
+    # time must not wipe the others.
     path = out_dir / "summary.json"
-    path.write_text(json.dumps({"model_ref": model_ref, "results": summaries}, indent=2))
+    merged = {}
+    if path.exists():
+        for r in json.loads(path.read_text()).get("results", []):
+            merged[r["benchmark"]] = r
+    for r in summaries:
+        merged[r["benchmark"]] = r
+    path.write_text(
+        json.dumps({"model_ref": model_ref, "results": list(merged.values())}, indent=2)
+    )
     print(f"-> {path}")
     return path

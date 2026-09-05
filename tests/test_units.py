@@ -5,6 +5,7 @@ from pathlib import Path
 
 from odistil.codeexec import check_with_tests, extract_code
 from odistil.config import Config
+from odistil.mlxutil import opens_think, split_think
 from odistil.textnorm import Decontaminator, final_answer, final_letter, qa_match
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,3 +72,28 @@ def test_baseline_json_is_consistent():
     for name, res in data["models"].items():
         for bench, r in res.items():
             assert abs(r["correct"] / r["total"] - r["accuracy"]) < 0.001, (name, bench)
+
+
+def test_split_think_handles_template_opened_block():
+    # template pre-opens <think>, so the generation only closes it
+    assert split_think("reasoning here\n</think>\n\nAnswer: B") == ("Answer: B", "reasoning here")
+    # a complete pair anywhere in the output
+    assert split_think("<think>why</think>\nAnswer: C") == ("Answer: C", "why")
+    # truncated mid-reasoning: no answer to score
+    assert split_think("still thinking about it") == ("still thinking about it", None)
+    assert split_think("<think>cut off") == ("", "cut off")
+    # thinking disabled: template emits an empty block
+    assert split_think("<think>\n\n</think>\n\nAnswer: A") == ("Answer: A", "")
+
+
+def test_pre_opened_truncation_yields_no_answer():
+    # prompt ended with '<think>\n' and the budget ran out mid-reasoning
+    assert split_think("I should first consider", pre_opened=True) == ("", "I should first consider")
+    # same text without a pre-opened block is a plain answer
+    assert split_think("I should first consider") == ("I should first consider", None)
+
+
+def test_opens_think_detects_template_state():
+    assert opens_think("<|im_start|>assistant\n<think>\n")
+    assert not opens_think("<|im_start|>assistant\n<think>\n\n</think>\n\n")
+    assert not opens_think("<|im_start|>assistant\n")

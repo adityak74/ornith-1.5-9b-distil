@@ -17,19 +17,42 @@ class Completion:
     raw: str
     tokens: int
     seconds: float
+    truncated: bool = False  # ran out of budget before closing </think>
 
 
-def split_think(raw: str) -> tuple[str, str | None]:
+def opens_think(rendered_prompt: str) -> bool:
+    """True when the chat template already emitted an unclosed <think>."""
+    return rendered_prompt.rstrip().endswith("<think>") or (
+        "<think>" in rendered_prompt and "</think>" not in rendered_prompt.rsplit("<think>", 1)[1]
+    )
+
+
+def split_think(raw: str, pre_opened: bool = False) -> tuple[str, str | None]:
+    """Separate reasoning from the answer.
+
+    The Ornith/Qwen chat template opens the reasoning block itself -- the prompt
+    ends with '<think>\n' -- so generated text usually starts *inside* the block
+    and carries only the closing tag. Handle both shapes, plus the truncated
+    case where the token budget ran out before the model stopped reasoning.
+    """
+    raw = raw.strip()
     m = THINK_RE.search(raw)
-    if not m:
-        # An unterminated <think> means we hit the token cap mid-reasoning.
-        if "<think>" in raw:
-            return "", raw.split("<think>", 1)[1]
-        return raw.strip(), None
-    return THINK_RE.sub("", raw).strip(), m.group(1).strip()
+    if m:  # a full <think>...</think> pair somewhere in the output
+        return THINK_RE.sub("", raw).strip(), m.group(1).strip()
+    if "</think>" in raw:  # template pre-opened the block
+        think, _, answer = raw.partition("</think>")
+        return answer.strip(), think.removeprefix("<think>").strip()
+    if "<think>" in raw:  # opened but never closed: truncated mid-reasoning
+        return "", raw.split("<think>", 1)[1].strip()
+    if pre_opened:
+        # The prompt opened the block and nothing closed it: the model ran out
+        # of budget while reasoning. There is no answer -- do not mistake the
+        # reasoning text for one.
+        return "", raw
+    return raw, None
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=1)  # one model resident at a time: 64 GB unified memory
 def load(path: str):
     from mlx_lm import load as _load
 
@@ -68,8 +91,9 @@ def generate_one(
     t0 = time.time()
     raw = _generate(model, tokenizer, prompt=text, max_tokens=max_tokens, sampler=sampler, verbose=False)
     dt = time.time() - t0
-    answer, thought = split_think(raw)
-    return Completion(answer, thought, raw, len(tokenizer.encode(raw)), dt)
+    pre = opens_think(text)
+    answer, thought = split_think(raw, pre)
+    return Completion(answer, thought, raw, len(tokenizer.encode(raw)), dt, not answer)
 
 
 def generate_batch(
@@ -101,29 +125,42 @@ def generate_batch(
 
             t0 = time.time()
             raw = _generate(model, tokenizer, prompt=t, max_tokens=max_tokens, sampler=sampler, verbose=False)
-            a, th = split_think(raw)
-            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), time.time() - t0))
+            a, th = split_think(raw, opens_think(t))
+            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), time.time() - t0, not a))
         return out
 
     out: list[Completion] = []
     for i in range(0, len(texts), batch_size):
         chunk = texts[i : i + batch_size]
         t0 = time.time()
-        res = _batch(model, tokenizer, prompts=chunk, max_tokens=max_tokens, sampler=sampler, verbose=False)
+        # batch_generate takes token ids, not strings.
+        ids = [tokenizer.encode(t) for t in chunk]
+        res = _batch(model, tokenizer, prompts=ids, max_tokens=max_tokens, sampler=sampler, verbose=False)
         dt = (time.time() - t0) / max(len(chunk), 1)
         raws = res.texts if hasattr(res, "texts") else list(res)
-        for raw in raws:
-            a, th = split_think(raw)
-            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), dt))
+        for rendered, raw in zip(chunk, raws, strict=True):
+            a, th = split_think(raw, opens_think(rendered))
+            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), dt, not a))
     return out
+
+
+def load_tokenizer(path: str):
+    """Tokenizer only -- never pulls the weights into memory."""
+    from pathlib import Path
+
+    from mlx_lm.utils import hf_repo_to_path
+    from mlx_lm.utils import load_tokenizer as _lt
+
+    p = Path(path).expanduser()
+    return _lt(p if p.exists() else hf_repo_to_path(path))
 
 
 def tokenizer_fingerprint(path: str) -> dict:
     """Used to decide whether true logit distillation is even possible."""
-    _, tok = load(path)
+    tok = load_tokenizer(path)
     probe = "def solve(x):\n    return x ** 2  # café ✅"
     return {
-        "vocab_size": len(tok),
+        "vocab_size": tok.vocab_size,
         "bos": tok.bos_token,
         "eos": tok.eos_token,
         "probe_ids": tok.encode(probe),

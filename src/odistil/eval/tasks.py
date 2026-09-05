@@ -8,6 +8,7 @@ problems, thinking enabled, greedy decoding.
 from __future__ import annotations
 
 import random
+import string
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 from ..codeexec import run_program
 from ..textnorm import final_letter
 
-LETTERS = "ABCDEFGHIJ"
+LETTERS = string.ascii_uppercase  # TruthfulQA MC1 goes up to 13 choices
 
 MCQ_TMPL = (
     "{question}\n\n{choices}\n\n"
