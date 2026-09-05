@@ -168,3 +168,39 @@ from the least-supplied domain. The scale now comes from the domain that is
 most over-supplied relative to its share, so every domain contributes
 everything it has up to its proportional cap. Also enforced `max_seq_len`,
 which was configured but never applied.
+
+## 12. Reasoning traces kept, at the cost of half the data
+
+At the 1024-token training cap, retention is:
+
+| cap | with reasoning | answer only |
+|---:|---:|---:|
+| 896 | 43% | 98% |
+| 1024 | 50% | 99% |
+| 1280 | 62% | 100% |
+
+Dropping the reasoning would keep essentially every sample. Not doing it: the
+chat template pre-opens `<think>`, so a student trained on answer-only targets
+learns to emit `</think>` immediately and stop reasoning — precisely the
+behaviour the model is evaluated and served with. Half the data with intact
+reasoning beats all of it with the reasoning removed.
+
+Instead the knowledge teacher is now asked to **keep reasoning under 150
+words**, which raises retention per GPU-hour rather than trading away the
+behaviour. Rejection sampling still filters any answer that gets worse for the
+brevity, so the risk is a lower keep rate, not a worse student.
+
+## 13. Back half of the pipeline validated end to end
+
+Before spending the ~9-hour Qwen generation, the stages after training were
+proven on the code-only adapters:
+
+- **fuse** — 17 GB bf16 checkpoint, 28 s.
+- **quantize --variant oq4** — the mixed-bit map read from the shipped oQ4
+  checkpoint applied cleanly: **120/120 promoted modules matched**, 4.721 bits
+  per weight, 5.0 GB against the shipped model's 4.9 GB.
+- **package** — loads, generates correct Python, and carries the tokenizer,
+  chat template and shard index oMLX needs.
+
+Two bugs fixed on the way: the quant predicate had the wrong arity for
+`mlx_lm.convert`, and `mlx_lm fuse` needed the adapter path passed explicitly.

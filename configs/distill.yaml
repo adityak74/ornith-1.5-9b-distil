@@ -38,7 +38,7 @@ dataset:
   verify_code: true      # generated code must pass the dataset's own tests
   verify_qa: true        # normalized-substring match against gold aliases
   decontaminate_ngram: 13
-  max_seq_len: 896       # must match train.max_seq_length; longer samples are dropped
+  max_seq_len: 1024      # keeps 50% of traces with reasoning intact (98% without)
   valid_frac: 0.02
   mix:                   # target proportions of the final training set
     knowledge: 0.40
@@ -59,7 +59,7 @@ train:
   learning_rate: 5.0e-5
   lr_schedule: cosine_decay
   warmup: 100
-  max_seq_length: 896     # 47.8 GB peak at 1024 is too close to the 52 GB ceiling
+  max_seq_length: 1024    # 47.8 GB peak; save_every guards against an OOM restart
   grad_checkpoint: true
   steps_per_eval: 200
   save_every: 250

@@ -102,7 +102,7 @@ def oq_predicate(reference: Path) -> tuple[dict, Callable]:
     stripped = {k.removeprefix("language_model."): v for k, v in per.items()}
     hits = {"n": 0}
 
-    def predicate(path: str, module, config) -> bool | dict:
+    def predicate(path: str, module, config=None) -> bool | dict:
         spec = per.get(path) or stripped.get(path.removeprefix("language_model."))
         if spec:
             hits["n"] += 1

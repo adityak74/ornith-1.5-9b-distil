@@ -22,10 +22,11 @@ SYSTEM = (
 
 
 def _gen(teacher: dict, tconf: dict, bs: int, items: list[dict], budget: int):
+    system = " ".join(filter(None, [SYSTEM, teacher.get("style")]))
     return generate_batch(
         teacher["path"],
         [c["prompt"] for c in items],
-        system=SYSTEM,
+        system=system,
         max_tokens=budget,
         temp=teacher["temp"],
         top_p=teacher["top_p"],
