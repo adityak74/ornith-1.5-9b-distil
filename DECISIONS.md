@@ -231,3 +231,43 @@ Code was also the smallest slice (421 of 1,672 samples) and the one where the
 teacher had least to teach: Ornith-35B is only a few points above the student
 on HumanEval. The knowledge and truthfulness slices are 1,251 samples and face
 much larger teacher gaps, so they are where a gain, if any, should appear.
+
+## 15. Correction to §14, and the final result
+
+§14 compared the distilled **4.72-bit** model against the **bf16** base, which
+folds in the quantization cost and pointed the wrong way. The like-for-like
+comparison — both models quantized with the same oQ4 map, measured by this
+harness — is the one that matters:
+
+| benchmark | shipped oQ4 | distilled oQ4 | delta | ±2 s.e. | truncations |
+|---|---:|---:|---:|---:|---:|
+| MMLU (250) | 81.2% | 82.4% | +1.2 pp | 6.9 | 24 → 10 |
+| TruthfulQA (250) | 72.4% | 70.8% | −1.6 pp | 8.1 | 27 → 20 |
+| HumanEval (164) | 72.0% | **84.1%** | **+12.2 pp** | 9.0 | 39 → 19 |
+
+bf16 base (undistilled, unquantized) scores 88.4% HumanEval, so the distilled
+oQ4 recovers most of what quantization costs.
+
+**HumanEval is a real gain**; MMLU and TruthfulQA move within noise at n=250.
+Against the shipped oQ4 the distilled model gained 28 HumanEval problems and
+lost 8, and **22 of the 28 gains were problems where the shipped model ran out
+of budget mid-reasoning**.
+
+The mechanism is visible in every column: **truncations roughly halve**
+(24→10, 27→20, 39→19) and mean HumanEval generation drops from 1,721 to 1,414
+tokens. The shipped oQ4 rambles — 24% of its HumanEval attempts never reach an
+answer — and training on teacher traces that terminate cleanly largely fixed
+that. Quantization appears to damage reasoning *termination* more than
+reasoning *quality*, and distillation repairs exactly that.
+
+This also explains the flat MMLU/TruthfulQA: those are multiple-choice, where a
+truncated answer is recoverable from context far more often than a truncated
+program is, so there is less broken behaviour available to repair.
+
+### What this run does not show
+
+- No gain on knowledge or truthfulness, despite 75% of the training data
+  going there. Either 1,251 samples is too few to move MMLU, or the 1024-token
+  cap kept exactly the short traces that carry least knowledge.
+- MMLU/TruthfulQA were measured on seeded 250-item subsets, not the full
+  protocol. Deltas under ~7 pp are not resolvable at that size.

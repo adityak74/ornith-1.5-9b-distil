@@ -61,16 +61,26 @@ odistil eval --model runs/v1/fused --tag distilled-bf16
 odistil report --time
 ```
 
-```
-Model                                  MMLU    TRUTHFULQA     HUMANEVAL
------------------------------------------------------------------------
-Ornith-1.5-9B-MLX-oQ4                 78.0%         80.7%         87.8%
-Ornith-1.5-9B-MLX                     82.6%         80.5%         91.5%
-Qwen3.6-35B-A3B-MLX-4bit              89.3%         89.2%         93.3%
-Ornith-1.5-35B-A3B-MLX-4bit           83.0%         86.4%         93.3%
-target (low)                          86.0%         86.0%         92.0%
-target (high)                         89.0%         89.0%         94.0%
-```
+### Result
+
+Like-for-like, both quantized with the same oQ4 mixed-bit map, measured by this
+harness (MMLU/TruthfulQA on seeded 250-item subsets, HumanEval in full):
+
+| benchmark | shipped oQ4 | distilled oQ4 | delta | ±2 s.e. | truncations |
+|---|---:|---:|---:|---:|---:|
+| MMLU | 81.2% | 82.4% | +1.2 pp | 6.9 | 24 → 10 |
+| TruthfulQA | 72.4% | 70.8% | −1.6 pp | 8.1 | 27 → 20 |
+| HumanEval | 72.0% | **84.1%** | **+12.2 pp** | 9.0 | 39 → 19 |
+
+The bf16 base scores 88.4% HumanEval, so the distilled oQ4 recovers most of the
+quantization loss. HumanEval is a real gain; MMLU and TruthfulQA move within
+noise at n=250.
+
+The mechanism shows up in every column: **truncations roughly halve**. The
+shipped oQ4 never reaches an answer on 24% of HumanEval problems, and 22 of the
+28 problems the distilled model gained were ones the shipped model ran out of
+budget on. Quantization damages reasoning *termination* more than reasoning
+*quality*, and distillation repairs that. Full reasoning: `DECISIONS.md` §15.
 
 ## Layout
 

@@ -74,10 +74,38 @@ def package(cfg: Config, src: Path, name: str, install: bool = False) -> Path:
     return src
 
 
+def _results_table(cfg: Config) -> str:
+    """Measured results, if this run has any, as a markdown table."""
+    rows: dict[str, dict] = {}
+    for summary in sorted((cfg.out_dir / "eval").glob("*/summary.json")):
+        results = json.loads(summary.read_text())["results"]
+        # Skip sanity checks and superseded runs: a handful of items is not a
+        # measurement, and a stale token budget is not comparable.
+        if max((r["total"] for r in results), default=0) < 100:
+            continue
+        if "budget" in summary.parent.name or "sanity" in summary.parent.name:
+            continue
+        for r in results:
+            rows.setdefault(r["benchmark"], {})[summary.parent.name] = r
+    if not rows:
+        return "_Not yet measured._"
+    tags = sorted({t for v in rows.values() for t in v})
+    out = ["| benchmark | " + " | ".join(tags) + " |",
+           "|---|" + "---|" * len(tags)]
+    for bench, by_tag in rows.items():
+        cells = []
+        for t in tags:
+            r = by_tag.get(t)
+            cells.append(f"{r['accuracy']:.1%} (n={r['total']})" if r else "-")
+        out.append(f"| {bench} | " + " | ".join(cells) + " |")
+    return "\n".join(out)
+
+
 def _card(cfg: Config, name: str, src: Path, bits) -> str:
     run = cfg.out_dir
     stats_file = run / "train" / "stats.json"
     stats = json.loads(stats_file.read_text()) if stats_file.exists() else {}
+    results = _results_table(cfg)
     return f"""# {name}
 
 Distilled variant of `Ornith-1.5-9B-MLX`, in MLX format.
@@ -92,6 +120,15 @@ Distilled variant of `Ornith-1.5-9B-MLX`, in MLX format.
 - **Size:** {_size_gb(src):.1f} GB
 - **Training data:** {stats.get('kept', '?')} verified traces kept of
   {stats.get('seen', '?')} generated
+
+## Measured
+
+All numbers below are from this repo's `odistil eval` harness (greedy, thinking
+on, 4096-token budget for HumanEval and 3072 for MMLU). They are **not**
+comparable to numbers from the oMLX server, which uses different prompting,
+parsing and token budgets.
+
+{results}
 
 Every training sample was verified before use: multiple-choice answers against
 the gold letter, open questions against gold aliases, and code by executing the
