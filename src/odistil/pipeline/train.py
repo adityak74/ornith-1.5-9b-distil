@@ -62,6 +62,10 @@ def train(cfg: Config, resume: bool = False, extra: list[str] | None = None) -> 
     adapter_dir.mkdir(parents=True, exist_ok=True)
     conf = _yaml(cfg, adapter_dir)
     cmd = [sys.executable, "-m", "mlx_lm", "lora", "-c", str(conf)]
+    # Keep the allocator from growing into Metal's live-resource limit.
+    tcfg = cfg.distill["train"]
+    if tcfg.get("clear_cache_threshold"):
+        cmd += ["--clear-cache-threshold", str(tcfg["clear_cache_threshold"])]
     if resume:
         cmd += ["--resume-adapter-file", str(adapter_dir / "adapters.safetensors")]
     cmd += extra or []

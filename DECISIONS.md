@@ -204,3 +204,30 @@ proven on the code-only adapters:
 
 Two bugs fixed on the way: the quant predicate had the wrong arity for
 `mlx_lm.convert`, and `mlx_lm fuse` needed the adapter path passed explicitly.
+
+## 14. First result: HumanEval did not improve
+
+| model | HumanEval (this harness, 4096 budget) | truncated |
+|---|---:|---:|
+| bf16 base (undistilled) | 145/164 = **88.4%** | 15 |
+| distilled oQ4 | 138/164 = **84.1%** | 19 |
+
+Item-level: the distilled model gained 7 problems and lost 14. **Eight of the
+14 losses were truncations** — it ran out of budget mid-reasoning on problems
+the base model finished.
+
+That is the most useful signal in the run. Training targets were teacher traces
+whose median length was ~950 tokens, so the student learned to reason at
+teacher length. Longer reasoning costs accuracy at a fixed token budget, and it
+also interacts badly with the 1024-token training cap: the traces that survived
+the cap are not a random sample, they are the *shorter* ones, while the model
+still generalised toward long reasoning.
+
+Note this row is not yet a like-for-like comparison — the distilled model is
+quantized to 4.72 bits and the baseline is bf16. The shipped-oQ4 measurement
+that isolates the distillation effect is running.
+
+Code was also the smallest slice (421 of 1,672 samples) and the one where the
+teacher had least to teach: Ornith-35B is only a few points above the student
+on HumanEval. The knowledge and truthfulness slices are 1,251 samples and face
+much larger teacher gaps, so they are where a gain, if any, should appear.
