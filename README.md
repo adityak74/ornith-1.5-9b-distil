@@ -2,6 +2,10 @@
 
 Two-teacher distillation of **Ornith-1.5-9B** on Apple Silicon / MLX.
 
+**Released model:** [adityak74/Ornith-1.5-9B-MLX-distil-oQ4](https://huggingface.co/adityak74/Ornith-1.5-9B-MLX-distil-oQ4)
+— 4.9 GB, +5.5 MMLU and +3.0 HumanEval over the stock oQ4 it replaces
+([model card](docs/MODEL_CARD.md)).
+
 - **Qwen3.6-35B-A3B-4bit** teaches knowledge and truthfulness (89.3 MMLU / 89.2 TruthfulQA).
 - **Ornith-1.5-35B-A3B-4bit** teaches code — it ties Qwen on HumanEval (93.3) and
   finishes the benchmark 4.6× faster, so it does the bulk of the generation.
