@@ -271,3 +271,61 @@ program is, so there is less broken behaviour available to repair.
   cap kept exactly the short traces that carry least knowledge.
 - MMLU/TruthfulQA were measured on seeded 250-item subsets, not the full
   protocol. Deltas under ~7 pp are not resolvable at that size.
+
+## 16. Cross-harness confirmation on oMLX
+
+The distilled model was re-measured on the oMLX server — the same harness that
+produced the original table, and the one that matters for deployment:
+
+| model | size | MMLU | TruthfulQA | HumanEval |
+|---|---:|---:|---:|---:|
+| oQ4 (shipped) | 4.9 GB | 78.0% | 80.7% | 87.8% |
+| oQ8 | 8.9 GB | 83.1% | 80.7% | 88.4% |
+| bf16 base | 17 GB | 82.6% | 80.5% | 91.5% |
+| **distil-oQ4** | **4.9 GB** | **83.5%** | 79.0% | **90.8%** |
+
+- vs the shipped oQ4: **+5.5 MMLU, +3.0 HumanEval**, −1.7 TruthfulQA.
+- vs **oQ8, which is 1.8x larger**: +0.4 MMLU, +2.4 HumanEval.
+- vs the **bf16 base, 3.5x larger**: +0.9 MMLU, −0.7 HumanEval.
+
+A 4.9 GB model that beats the 8.9 GB oQ8 on two of three benchmarks and matches
+the 17 GB bf16 base within a point is the compression result this project was
+after, even though none of the 86-89 targets were reached.
+
+### The two harnesses agree on direction, and the disagreement is informative
+
+| benchmark | this harness | oMLX |
+|---|---:|---:|
+| MMLU | +1.2 pp | +5.5 pp |
+| TruthfulQA | −1.6 pp | −1.7 pp |
+| HumanEval | +12.2 pp | +3.0 pp |
+
+TruthfulQA agrees to within 0.1 pp. MMLU differs because this harness measured
+only 250 items (±6.9 pp). HumanEval differs because the harnesses disagree
+about the *shipped* model, not the distilled one: oMLX scores shipped oQ4 at
+87.8% where this harness scores 72.0%. That gap is the truncation handling —
+oMLX evidently recovers an answer from output this harness scores as
+unfinished. So **+3.0 pp is the number to trust for deployment**, and the
++12.2 pp here was inflated by measuring a failure mode oMLX masks.
+
+### Generation time independently confirms the mechanism
+
+Against the shipped oQ4 on oMLX: **HumanEval −33%, MMLU −15%** (TruthfulQA
++26%). The distilled model reaches its answer sooner on the benchmarks where it
+improved. That is the same termination effect seen here as halved truncation
+counts, showing up on a harness that does not penalise truncation — so it is a
+property of the model, not an artefact of scoring.
+
+## 17. Why TruthfulQA regressed, and what to do about it
+
+TruthfulQA is the one benchmark that got worse, consistently on both harnesses
+(−1.6 / −1.7 pp). The likely cause is the training data: the truthfulness slice
+was 626 samples from **TriviaQA and SciQ**, which reward confident factual
+recall. TruthfulQA rewards the opposite reflex — resisting a plausible-sounding
+falsehood and declining to assert. Training on confident recall plausibly
+sharpens exactly the behaviour TruthfulQA penalises.
+
+For v2: drop TriviaQA from the truthfulness slice and source it from data that
+teaches calibration and refusal instead, or generate it — ask the teacher to
+answer questions with common misconceptions and keep only traces where it
+identifies the misconception. TruthfulQA itself remains eval-only.
