@@ -105,6 +105,48 @@ def subsample(items: list, n: int, seed: int) -> list:
     return [items[i] for i in sorted(picked)]
 
 
+class _TagLock:
+    """One writer per eval tag.
+
+    Two runs appending to the same results file interleave records and silently
+    corrupt the count -- 168 lines holding 88 unique ids, in the case that
+    prompted this.
+    """
+
+    def __init__(self, out_dir: Path):
+        self.path = out_dir / ".lock"
+
+    def __enter__(self):
+        import os
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            pid = self.path.read_text().strip()
+            alive = Path(f"/proc/{pid}").exists()
+            try:
+                os.kill(int(pid), 0)
+                alive = True
+            except (ProcessLookupError, ValueError):
+                alive = False
+            except PermissionError:
+                alive = True
+            if alive:
+                raise SystemExit(
+                    f"another eval is already writing {self.path.parent} (pid {pid}); "
+                    "wait for it or stop it first"
+                ) from None
+            self.path.unlink(missing_ok=True)
+            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return self
+
+    def __exit__(self, *exc):
+        self.path.unlink(missing_ok=True)
+
+
 def run(
     cfg: Config,
     model_ref: str,
@@ -118,6 +160,8 @@ def run(
     tag = tag or model_ref.replace("/", "_").replace(":", "-")
     out_dir = cfg.path("eval", tag)
 
+    lock = _TagLock(out_dir)
+    lock.__enter__()
     summaries = []
     for name in benchmarks or ecfg["benchmarks"]:
         builder = REGISTRY[name]
@@ -151,5 +195,6 @@ def run(
     path.write_text(
         json.dumps({"model_ref": model_ref, "results": list(merged.values())}, indent=2)
     )
+    lock.__exit__()
     print(f"-> {path}")
     return path

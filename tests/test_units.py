@@ -71,6 +71,8 @@ def test_baseline_json_is_consistent():
     data = json.loads((ROOT / "benchmarks" / "baseline.json").read_text())
     for name, res in data["models"].items():
         for bench, r in res.items():
+            if not isinstance(r, dict):   # free-text fields like "note"
+                continue
             assert abs(r["correct"] / r["total"] - r["accuracy"]) < 0.001, (name, bench)
 
 
