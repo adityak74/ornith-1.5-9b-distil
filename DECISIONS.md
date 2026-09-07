@@ -443,3 +443,58 @@ data problem.
 Training runs at the same 3,200 iterations as v1 — with 37% more data that is
 1.4 epochs rather than 1.9, which also reduces the mild overfitting v1 showed
 (train loss 0.138 against val 0.310).
+
+## 22. v2 result: no improvement. Not shipped.
+
+| benchmark | v1 | v2 | delta | ±2 s.e. | truncations |
+|---|---:|---:|---:|---:|---:|
+| MMLU (250) | 82.4% | 81.2% | −1.2 | 6.9 | 10 → 15 |
+| TruthfulQA (250) | 70.8% | **71.6%** | +0.8 | 8.1 | 20 → 22 |
+| HumanEval (164) | **84.1%** | 81.1% | −3.0 | 8.4 | 19 → 13 |
+
+Every delta is inside its error bar and two of three lean negative, so v2 was
+not uploaded. v1 remains the released model.
+
+**The §17 hypothesis is not supported.** TruthfulQA moved +0.8 pp — nothing.
+Replacing recall data with gold-labelled misconception data was a clean,
+well-motivated intervention aimed at a specific diagnosis, and it did not
+reproduce as a benchmark gain. The diagnosis was plausible and wrong, or the
+effect is smaller than this harness can resolve at n=250.
+
+### The confound I introduced
+
+Holding **iterations** constant rather than **epochs** meant v2's 37% larger
+dataset got 1.43 passes where v1 got 1.95. v2 is therefore both better-fed and
+less-trained, and those two effects cannot be separated from this run. Matching
+v1's epoch count needs 4,375 iterations (+37% compute, roughly 3 more hours).
+
+That is the single cleanest follow-up: rerun v2's data at 4,375 iterations. If
+it still does not beat v1, the data changes genuinely did not help and the
+remaining lever is the token cap, not the data mixture.
+
+### Lower validation loss did not become better benchmarks
+
+v2 fits the teacher distribution measurably better — val loss 0.267 against
+v1's 0.310, train 0.116 against 0.138 — and scores the same or slightly worse
+on all three benchmarks. Fitting teacher traces more closely is not the same as
+answering benchmark questions more correctly, and val loss should not be used
+as a stopping signal for this kind of work.
+
+### What did reproduce
+
+The **termination** effect from §15 shows up again: HumanEval truncations fell
+19 → 13, the benchmark where v2's data was most improved (shorter code traces).
+It just did not convert into accuracy this time. MMLU and TruthfulQA
+truncations rose slightly, which fits the observation in §21 that the brevity
+instruction shortened code traces but not multiple-choice reasoning.
+
+### Ranking for v3
+
+1. **Raise the 1024-token cap.** It rejected 46% of everything generated in v2
+   (2,338 traces), six times what wrong answers cost. It is a memory limit, and
+   every data-mixture change so far has been small next to it.
+2. **Match epochs before concluding anything about data.** See above.
+3. Offline top-k logit distillation, which the shared vocabulary allows.
+
+Data-source tuning is now the *least* promising lever: two rounds of it moved
+nothing outside noise.
