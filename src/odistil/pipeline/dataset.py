@@ -41,6 +41,11 @@ def _verify(rec: dict, dcfg: dict) -> tuple[bool, str]:
     if kind == "mcq" and dcfg["verify_mcq"]:
         got = final_letter(answer)
         return (got == gold, f"mcq:{got}->{gold}")
+    if kind == "tf" and dcfg["verify_mcq"]:
+        from ..textnorm import final_answer
+
+        got = (final_answer(answer) or "").strip().lower().rstrip(".")
+        return got.startswith(gold.lower()), f"tf:{got[:12]}"
     if kind == "qa" and dcfg["verify_qa"]:
         return (qa_match(answer, gold), "qa")
     if kind == "code" and dcfg["verify_code"]:

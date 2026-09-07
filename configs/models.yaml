@@ -29,6 +29,9 @@ teachers:
     repo: ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
     local: /Volumes/SATECHI/.omlx/ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
     domains: [code, agentic, tools]
+    # v1 ran without this and lost 356 code traces to the length cap -- more
+    # than it lost to wrong answers.
+    style: "Reason briefly before writing the code; do not restate the problem."
     max_tokens: 2048
     temp: 0.4
     top_p: 0.95

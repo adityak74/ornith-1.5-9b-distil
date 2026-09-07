@@ -329,3 +329,48 @@ For v2: drop TriviaQA from the truthfulness slice and source it from data that
 teaches calibration and refusal instead, or generate it — ask the teacher to
 answer questions with common misconceptions and keep only traces where it
 identifies the misconception. TruthfulQA itself remains eval-only.
+
+---
+
+# v2
+
+## 18. What v2 changes, and why
+
+v1 shipped at 83.5 / 79.0 / 90.8 (MMLU / TruthfulQA / HumanEval on oMLX). Two
+defects were diagnosable from the v1 data, so v2 fixes exactly those rather
+than changing everything at once.
+
+**Fix 1 — the truthfulness slice taught the wrong reflex.** v1 drew it from
+TriviaQA and SciQ: obscure factual recall ("in which British city are Butetown,
+Splott and Roath?"). TruthfulQA measures the opposite skill — resisting a
+plausible-sounding falsehood. Replaced with
+[`notrichardren/misconceptions_tf`](https://huggingface.co/datasets/notrichardren/misconceptions_tf):
+1,703 true/false statements, 63% of them misconceptions, with gold labels so
+the traces stay verifiable. Checked for contamination: **zero 8-gram overlap
+with TruthfulQA**. SciQ moves to the knowledge slice, where it always belonged.
+
+**Fix 2 — the code teacher was never asked to be brief.** The knowledge teacher
+was (§12), the code teacher was not, and v1 lost **356 code traces to the length
+cap — more than it lost to wrong answers (93)**. The code slice is therefore
+being regenerated with the same brevity instruction. Cost is ~2 GPU-hours,
+expected return is several hundred extra verified samples in the slice that had
+the fewest.
+
+Everything else is held constant: same teachers, same rank-32/top-16 LoRA, same
+1024-token cap, same oQ4 map. If v2 moves, the cause is identifiable.
+
+## 19. A change worth making, reverted for a boring reason
+
+Prompt sampling takes `rng.sample(range(N), n)`, which is stable when *other*
+pools are resized but not when *this* pool is. Growing MMLU from 1,500 to 2,400
+therefore reshuffles the selection, and every trace already generated stops
+matching by id. Taking a prefix of one fixed shuffle fixes that properly.
+
+I made the change, then measured what it cost: reusable v1 traces dropped from
+2,400 to **65**. Switching methods invalidates traces generated under the old
+one, and 2,400 traces is about five GPU-hours. Reverted, with the reasoning left
+in the code — it is the right design to adopt at the start of a run that has
+nothing to reuse, and the wrong one to adopt mid-project.
+
+Net effect: v2 reuses all 2,400 v1 knowledge traces and generates only the
+1,703 new misconception prompts and 974 regenerated code prompts.

@@ -20,6 +20,12 @@ from ..config import Config
 
 LETTERS = string.ascii_uppercase  # TruthfulQA MC1 goes up to 13 choices
 
+TF_TMPL = (
+    "Is the following statement true or false?\n\n{statement}\n\n"
+    "Some statements that sound plausible are common misconceptions. Reason "
+    "briefly, then end your reply with a final line of exactly 'Answer: True' "
+    "or 'Answer: False'."
+)
 MCQ_TMPL = (
     "{question}\n\n{choices}\n\n"
     "Think it through, then end your reply with a final line of exactly "
@@ -59,6 +65,13 @@ def _normalize(src: dict, row: dict, idx: int) -> dict | None:
             if row["answerKey"] not in labels:
                 return None
             prompt, gold = _mcq(row["question_stem"], list(ch["text"]), labels.index(row["answerKey"]))
+        elif hf.endswith("misconceptions_tf"):
+            # 'Correct' is 1.0 when the statement is true, 0.0 when it is a
+            # misconception. Teaches resisting plausible falsehoods, which is
+            # what TruthfulQA measures -- unlike recall data, which teaches the
+            # opposite reflex. See DECISIONS.md 17.
+            prompt = TF_TMPL.format(statement=row["Question"].strip())
+            gold = "True" if float(row["Correct"]) == 1.0 else "False"
         elif hf.endswith("sciq"):
             choices = [row["distractor1"], row["distractor2"], row["distractor3"], row["correct_answer"]]
             random.shuffle(choices)
@@ -104,8 +117,14 @@ def build(cfg: Config, domains: list[str] | None = None, limit: int | None = Non
                 want = min(src["n"], limit) if limit else src["n"]
                 print(f"  {domain:<13} {src['hf']}:{src['split']}  -> {want}")
                 ds = load_dataset(src["hf"], src.get("config"), split=src["split"])
-                # Seed per source: re-sizing one pool must not reshuffle the others,
-                # or previously generated traces stop matching by id.
+                # Seed per source: re-sizing one pool must not reshuffle another,
+                # or traces already generated stop matching by id.
+                #
+                # A prefix-of-one-shuffle would additionally survive *growing* a
+                # pool (1500 -> 2400 keeping the first 1500). Tried and reverted:
+                # switching methods invalidated 2,400 traces already generated
+                # under this one, which is 5 GPU-hours. Worth adopting at the
+                # start of a run that has nothing to reuse.
                 src_rng = random.Random(f"{seed}:{src['hf']}:{src['split']}")
                 idxs = src_rng.sample(range(len(ds)), k=min(want, len(ds)))
                 for i in idxs:
