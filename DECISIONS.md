@@ -374,3 +374,37 @@ nothing to reuse, and the wrong one to adopt mid-project.
 
 Net effect: v2 reuses all 2,400 v1 knowledge traces and generates only the
 1,703 new misconception prompts and 974 regenerated code prompts.
+
+## 20. Ollama / GGUF port: attempted, does not work
+
+Tried publishing v1 to Ollama. It converts and loads, but generates gibberish
+(`'LEDQ/[1'`). Four genuine incompatibilities were found and fixed on the way:
+
+1. `Qwen3_5ForCausalLM` is not a recognised architecture; only the multimodal
+   `Qwen3_5ForConditionalGeneration` is.
+2. Tensor prefixes: the checkpoint uses `language_model.model.*`, the converter
+   expects transformers-v5 `model.language_model.*` with a top-level `lm_head`.
+   Fixing this resolved `token_embd.weight not found`.
+3. **MLX stores conv1d as `(out, kernel, in)`; PyTorch and llama.cpp expect
+   `(out, in, kernel)`.** 24 tensors needed transposing.
+4. The config declares `mtp_num_hidden_layers: 1`, but the MLX checkpoint
+   carries no multi-token-prediction weights, so llama.cpp expected 33 blocks
+   and found 32.
+
+After all four it loads and is numerically wrong, which points at llama.cpp's
+GDN/linear-attention implementation expecting a layout MLX does not produce.
+Finding it means reverse-engineering the expected layout of every tensor in the
+hybrid attention path — a project, not a fix, so it was stopped here.
+
+This is an MLX-to-GGUF problem, not a distillation problem: the fused checkpoint
+is structurally identical to the stock base, which would convert equally badly.
+The viable route is to convert from **PyTorch** weights instead — apply the LoRA
+to a non-MLX checkpoint and use llama.cpp's own `convert_hf_to_gguf.py`, whose
+per-tensor mapping is inspectable — and only if llama.cpp supports this hybrid
+architecture at all.
+
+**Process note:** running these conversions while teacher generation was live
+killed the code slice at 336/974 through memory pressure — breaking the
+serialisation rule from §9 that was written after the same mistake. It also
+left 130 GB of orphaned blobs in `~/.ollama/models/blobs`, which `ollama rm`
+does not reclaim.
