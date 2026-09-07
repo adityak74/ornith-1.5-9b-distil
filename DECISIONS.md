@@ -408,3 +408,38 @@ killed the code slice at 336/974 through memory pressure — breaking the
 serialisation rule from §9 that was written after the same mistake. It also
 left 130 GB of orphaned blobs in `~/.ollama/models/blobs`, which `ollama rm`
 does not reclaim.
+
+## 21. v2 data: both fixes worked
+
+**The code teacher's brevity instruction cut trace length sharply:**
+
+| | median tokens | p75 | at 2048 cap | truncated to nothing |
+|---|---:|---:|---:|---:|
+| v1 (no brevity) | 1,014 | 1,912 | 229 | 118 |
+| v2 (brevity) | **717** | **1,495** | **160** | **72** |
+
+Median down 29%. Interestingly the same instruction did *not* shorten the
+knowledge teacher's traces (median 950 in v1 vs 925 in v2) — code answers have
+a natural stopping point once the function is written, while multiple-choice
+reasoning seems to expand to fill whatever budget it is given.
+
+**Resulting training set, against v1:**
+
+| slice | v1 | v2 | change |
+|---|---:|---:|---|
+| code | 421 | **530** | +26% (from 14 *fewer* traces) |
+| knowledge | 625 | **880** | +41% |
+| truthfulness | 626 | **876** | +40%, and now calibration rather than recall |
+| total | 1,672 | **2,286** | **+37%** |
+
+Keep rate 45% (v2) vs 42% (v1). The misconception teacher was right on 91% of
+items — the `reject:tf` count is 161 of 1,703.
+
+The 1024-token cap is still the dominant filter at 2,338 rejections, 46% of
+everything generated and far more than every wrong answer combined (361). It
+remains the single highest-value thing to fix, and it is a memory limit, not a
+data problem.
+
+Training runs at the same 3,200 iterations as v1 — with 37% more data that is
+1.4 epochs rather than 1.9, which also reduces the mild overfitting v1 showed
+(train loss 0.138 against val 0.310).
