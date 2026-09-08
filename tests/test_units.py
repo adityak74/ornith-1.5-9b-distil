@@ -99,3 +99,16 @@ def test_opens_think_detects_template_state():
     assert opens_think("<|im_start|>assistant\n<think>\n")
     assert not opens_think("<|im_start|>assistant\n<think>\n\n</think>\n\n")
     assert not opens_think("<|im_start|>assistant\n")
+
+
+def test_train_base_defaults_to_full_precision_student():
+    cfg = Config.load(distill=ROOT / "configs" / "distill.yaml")
+    assert cfg.train_base() == cfg.student_base()
+
+
+def test_v3_trains_against_the_quantized_checkpoint():
+    """QLoRA: the adapter must attach to the oQ4 model, not the bf16 base."""
+    cfg = Config.load(distill=ROOT / "configs" / "v3.yaml")
+    assert cfg.train_base() != cfg.student_base()
+    assert cfg.train_base().endswith("oQ4")
+    assert cfg.distill["train"]["max_seq_length"] == cfg.distill["dataset"]["max_seq_len"]

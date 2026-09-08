@@ -498,3 +498,68 @@ instruction shortened code traces but not multiple-choice reasoning.
 
 Data-source tuning is now the *least* promising lever: two rounds of it moved
 nothing outside noise.
+
+---
+
+# v3 (prepared, not yet run)
+
+## 23. QLoRA: train against the quantized forward pass
+
+v1 and v2 both did post-training quantization — LoRA on bf16, fuse, then
+quantize. Nothing in training was quantization-aware, which is an odd way to
+approach a problem that §15 identified as *quantization damage*: the adapter
+learns on a clean model and we hope the improvement survives being quantized.
+
+v3 attaches the adapter to the **oQ4 checkpoint** instead (`train.base:
+student:oq4`), so it sees the degraded forward pass and compensates for it
+directly. This is QLoRA, not true QAT — MLX has no fake-quant/straight-through
+primitives, only real quantization — but it is the variant that matters here
+and `mlx_lm lora` supports it natively.
+
+**The fuse step stays lossless in shape.** `LoRALinear.fuse(dequantize=False)`
+dequantizes the layer, adds the low-rank update, and re-quantizes **at that
+layer's own bits and group size**. The oQ4 mixed-bit map therefore survives
+fusing untouched, and v3 needs no separate quantize stage. Requantisation does
+reintroduce error on the corrected weights (the problem QA-LoRA and LoftQ
+address); if that proves costly, the fallback is shipping base + adapter
+separately, at the cost of a 173 MB sidecar oMLX may not load.
+
+## 24. The cap rises because the base got smaller
+
+A 4-bit base is 4.9 GB against bf16's 18 GB. v1/v2 peaked at 47.3 GB for
+1024 tokens, of which roughly 29 GB was activations, so freeing ~13 GB of
+weights should buy sequence length rather than just headroom.
+
+Set to **1536**, which matters because the cap has been the dominant data
+filter all along. Measured on v2's existing traces:
+
+| cap | retained | samples | vs 1024 |
+|---:|---:|---:|---:|
+| 1024 | 48% | 2,376 | — |
+| 1280 | 67% | 3,338 | +962 |
+| **1536** | **79%** | **3,942** | **+1,566** |
+| 2048 | 94% | 4,665 | +2,289 |
+
+**+66% training data from traces already on disk** — no regeneration. If 1536
+does not fit in memory, fall back to 1280 (+40%) before giving up on it.
+
+## 25. Iterations set by epochs this time
+
+§22's confound was holding iterations constant while the dataset grew, so v2
+got 1.43 epochs against v1's 1.95. v3 sets **7,200 iterations**, which is ~1.95
+epochs over the ~3.7k samples the 1536 cap should yield — matching v1 on the
+axis that actually matters. Expect 12-20 hours depending on how QLoRA's
+throughput compares; a 4-bit base moves less memory per step, so it may be
+faster than bf16 per iteration.
+
+## 26. What v3 tests, and what would falsify it
+
+One hypothesis: *the adapter should learn against the quantization it will be
+deployed under.* If v3 beats v1 on the oMLX harness, that is the answer, and it
+also happens to double the training data via the raised cap — so a win is
+confounded between the two changes and would need a follow-up to attribute.
+
+If it loses, then three rounds have failed to beat v1 and the honest conclusion
+is that a rank-32 LoRA over a few thousand samples has extracted what it can
+from this student, and the remaining gap to the 35B teachers is capacity, not
+recipe.

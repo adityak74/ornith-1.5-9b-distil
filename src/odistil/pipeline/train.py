@@ -21,7 +21,7 @@ def _yaml(cfg: Config, adapter_dir: Path) -> Path:
     t = cfg.distill["train"]
     data = cfg.path("train")
     conf = {
-        "model": cfg.student_base(),
+        "model": cfg.train_base(),
         "train": True,
         "data": str(data),
         "adapter_path": str(adapter_dir),
@@ -74,18 +74,31 @@ def train(cfg: Config, resume: bool = False, extra: list[str] | None = None) -> 
     return adapter_dir
 
 
-def fuse(cfg: Config, out: Path | None = None) -> Path:
+def fuse(cfg: Config, out: Path | None = None, dequantize: bool = False) -> Path:
+    """Fuse adapters into the base they were trained on.
+
+    For a QLoRA run the base is already quantized, and `LoRALinear.fuse`
+    dequantizes, adds the update, then re-quantizes **each layer at its own
+    bits and group size** -- so the oQ4 mixed-bit map survives and no separate
+    quantize step is needed. Pass `dequantize=True` to get a bf16 checkpoint
+    instead, e.g. to re-quantize with a different recipe.
+    """
     out = out or cfg.path("fused")
     cmd = [
         sys.executable, "-m", "mlx_lm", "fuse",
-        "--model", cfg.student_base(),
+        "--model", cfg.train_base(),
         "--adapter-path", str(cfg.path("adapters")),
         "--save-path", str(out),
     ]
+    if dequantize:
+        cmd.append("--dequantize")
     print("+", " ".join(cmd))
     subprocess.run(cmd, check=True)
     (out / "odistil.json").write_text(
-        json.dumps({"base": cfg.student_base(), "run": str(cfg.out_dir)}, indent=2)
+        json.dumps(
+            {"base": cfg.train_base(), "run": str(cfg.out_dir), "dequantized": dequantize},
+            indent=2,
+        )
     )
     return out
 

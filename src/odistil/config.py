@@ -48,6 +48,16 @@ class Config:
         s = self.models["student"]["base"]
         return s["local"] or s["repo"]
 
+    def train_base(self) -> str:
+        """Model the trainer attaches adapters to.
+
+        Defaults to the full-precision student. Set `train.base` to a quantized
+        checkpoint (or a `student:<variant>` ref) for QLoRA, where the adapter
+        learns against the quantized forward pass instead of a clean one.
+        """
+        ref = self.distill["train"].get("base")
+        return self.model_ref(ref) if ref else self.student_base()
+
     def teacher(self, name: str) -> dict[str, Any]:
         t = dict(self.models["teachers"][name])
         t["path"] = t.get("local") or t["repo"]

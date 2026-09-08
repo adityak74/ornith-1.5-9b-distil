@@ -32,6 +32,24 @@ eval-quant:       ## measure the distilled + quantized student
 
 report:;  uv run odistil report --time
 
+# --- v3 (QLoRA over the oQ4 base) -----------------------------------------
+V3 := --distill-config configs/v3.yaml
+
+v3-dataset:       ## rebuild v2's traces at the 1536 cap (CPU only)
+	uv run odistil $(V3) dataset
+
+v3-train:         ## QLoRA against the quantized checkpoint
+	uv run odistil $(V3) train
+
+v3-fuse:          ## fuse; stays quantized, oQ4 map preserved per layer
+	uv run odistil $(V3) fuse
+
+v3-eval:
+	uv run odistil $(V3) eval --model runs/v3/fused --tag distil-v3-oq4
+
+v3-install:
+	uv run odistil $(V3) package --src runs/v3/fused --name Ornith-1.5-9B-MLX-distil-v3-oQ4 --install
+
 smoke:            ## tiny end-to-end pass on 24 items / 20 iters
 	uv run odistil --distill-config configs/smoke.yaml prompts
 	uv run odistil --distill-config configs/smoke.yaml teach

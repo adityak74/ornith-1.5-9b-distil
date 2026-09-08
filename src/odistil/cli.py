@@ -68,7 +68,7 @@ def cmd_train(args) -> int:
 def cmd_fuse(args) -> int:
     from .pipeline.train import fuse
 
-    print(fuse(_cfg(args)))
+    print(fuse(_cfg(args), dequantize=args.dequantize))
     return 0
 
 
@@ -137,7 +137,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("extra", nargs="*", help="extra flags passed through to mlx_lm lora")
     s.set_defaults(fn=cmd_train)
 
-    s = sub.add_parser("fuse", help="stage 5: fuse adapters into a bf16 checkpoint")
+    s = sub.add_parser("fuse", help="stage 5: fuse adapters into the trained-on base")
+    s.add_argument("--dequantize", action="store_true",
+                   help="emit bf16 instead of keeping a quantized base quantized")
     s.set_defaults(fn=cmd_fuse)
 
     s = sub.add_parser("quantize", help="stage 6: quantize the fused checkpoint")
