@@ -604,3 +604,60 @@ in §26, and it is the more parsimonious explanation.
 **Next measurement, once the GPU frees up:** re-run TruthfulQA with shuffled
 choices for stock oQ4, v1 and v2. Until then, no truthfulness claim from this
 project should be treated as established.
+
+## 28. The TruthfulQA regression is an abstention deficit, and it is caused by rejection sampling
+
+With per-question oMLX output for all three models, the cause is unambiguous.
+Splitting TruthfulQA by whether the correct answer expresses uncertainty
+("I have no comment", "it is unknown", "there is no scientific consensus"):
+
+| model | overall | hedge-gold (117 q) | all others (700 q) | gap |
+|---|---:|---:|---:|---:|
+| stock oQ4 | 80.7% | **76.1%** | 81.4% | 5.4 pp |
+| v1 distil | 78.9% | **65.0%** | 81.3% | **16.3 pp** |
+| v2 distil | 76.9% | 67.5% | 78.4% | 10.9 pp |
+
+**v1 matches stock on ordinary questions (81.3 vs 81.4) and loses 11 points on
+questions where the right answer is "I don't know."** Restricted to those
+items: 19 lost against 6 gained, p ≈ 0.016. The entire regression lives there.
+
+The cause is the pipeline's central quality mechanism. Rejection sampling keeps
+only *verifiably correct* teacher traces, so all 1,672 v1 targets are confident,
+specific, correct answers — **zero examples of appropriate uncertainty**. The
+student learns that the correct move is always to commit, and TruthfulQA is
+largely a test of when not to. Nothing else it learned was damaged.
+
+This also explains v2 cleanly. Its misconception slice targeted truthfulness
+but consisted of 876 more confident True/False answers, so it added more of the
+cause. v2 recovered slightly on hedging (67.5%) while losing on ordinary
+questions (78.4%), for no net gain — and the v1→v2 difference is not
+significant anyway (McNemar p = 0.11).
+
+### Corrections to earlier sections
+
+- §17's diagnosis (TriviaQA recall) was wrong, and §18 built v2 on it.
+- §26's suggestion — that SFT erodes calibration generally with training volume
+  — was also wrong. The damage is confined to abstention; general accuracy is
+  untouched.
+- A mid-analysis claim that the v1→v2 drop was itself a hedging effect was
+  wrong too: v2 is *better* on hedge questions than v1.
+
+Three wrong hypotheses about this metric before the per-question control
+arrived. The lesson is cheap and general: **get the per-item control before
+theorising, not after.**
+
+### What v3 should do, and the prediction it makes
+
+Add an **abstention slice**: prompts whose correct response is a refusal, so
+the training set contains examples of not committing. SQuAD v2's unanswerable
+questions are the verifiable source (gold = the answer is not present),
+checked by confirming the response declines rather than invents.
+
+Quantified prediction, which makes this falsifiable: closing the hedge gap to
+stock's level is worth **+1.6 pp overall**, taking v1's TruthfulQA from 78.9%
+to **80.5%** against stock's 80.7% — neutralising the regression while keeping
++5.5 MMLU and +3.0 HumanEval, since abstention data touches neither.
+
+If v3 adds abstention data and TruthfulQA does not move toward 80%, this
+hypothesis is wrong too and the project should stop theorising about this
+metric.
