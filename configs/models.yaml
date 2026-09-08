@@ -22,6 +22,11 @@ teachers:
     # so the teacher is asked to keep reasoning short. Rejection sampling still
     # catches any answer that gets worse for it.
     style: "Keep your reasoning under 150 words, then give the final answer."
+    style_by_domain:
+      # Deciding a passage does not contain an answer needs a look, not an
+      # essay: unshortened, these traces ran ~1300 tokens and 84% of them
+      # exceeded the training cap, leaving too few to teach the behaviour.
+      abstention: "Check the passage briefly. In two or three sentences, say whether it contains the answer, then give the final line."
     max_tokens: 2048
     temp: 0.6
     top_p: 0.95

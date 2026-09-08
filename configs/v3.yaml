@@ -52,7 +52,7 @@ dataset:
   verify_code: true      # generated code must pass the dataset's own tests
   verify_qa: true        # normalized-substring match against gold aliases
   decontaminate_ngram: 13
-  max_seq_len: 1536      # 79% of v2's traces fit here vs 48% at 1024
+  max_seq_len: 1024      # must match train.max_seq_length
   valid_frac: 0.02
   mix:                   # target proportions of the final training set
     knowledge: 0.35
@@ -63,12 +63,12 @@ dataset:
     abstention: 0.15
 
 train:
-  # v3 is QLoRA: the adapter trains against the *quantized* forward pass, so it
-  # compensates for the damage it is meant to repair instead of learning on a
-  # clean model and hoping the gain survives quantization. Fusing re-quantizes
-  # each layer at its own bits, so the oQ4 mixed-bit map is preserved and no
-  # separate quantize stage is needed.
-  base: student:oq4
+  # QLoRA was planned here and dropped after measurement: on this architecture
+  # it peaked at 49.0 GB (worse than bf16's 47.3) and ran at 26 s/iter against
+  # bf16's 10 -- dequantizing weights every pass costs more than the smaller
+  # weights save. 7,800 iterations would have taken 56 hours. See DECISIONS 30.
+  # Back on the bf16 base, which also keeps v3 a clean test of the abstention
+  # hypothesis rather than two confounded changes.
   fine_tune_type: lora
   num_layers: 16          # half the stack; backprop stops there
   rank: 32
@@ -77,12 +77,12 @@ train:
   batch_size: 1           # memory scales ~20 MB/token; batch 2 does not fit
   grad_accumulation_steps: 1   # 4 kept four backward graphs alive and hit
                                # Metal's 499000 live-resource limit
-  iters: 7200            # ~1.95 epochs over the ~3.7k samples a 1536
+  iters: 7800            # 1.95 epochs over 3994 samples, matching v1 (22)
                          # cap yields, matching v1's epoch count (22)
   learning_rate: 3.0e-5   # lowered with the effective batch (4 -> 1)
   lr_schedule: cosine_decay
   warmup: 150
-  max_seq_length: 1536    # 4-bit base frees ~13 GB of the 47 GB peak;
+  max_seq_length: 1024    # bf16 ceiling, measured; 1280 OOMs
                           # measure before trusting -- fall back to 1280
   grad_checkpoint: true
   clear_cache_threshold: 8

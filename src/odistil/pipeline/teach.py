@@ -21,8 +21,20 @@ SYSTEM = (
 )
 
 
+def _style_for(teacher: dict, domain: str) -> str | None:
+    """Per-domain style, falling back to the teacher's default.
+
+    Brevity is not uniformly good: shortening the code teacher's reasoning cost
+    5.4 pp of HumanEval (DECISIONS.md 29). It is right for abstention, where the
+    judgement is "the passage does not say this" and a thousand tokens of
+    deliberation only pushes the sample past the training length cap.
+    """
+    by_domain = teacher.get("style_by_domain") or {}
+    return by_domain.get(domain, teacher.get("style"))
+
+
 def _gen(teacher: dict, tconf: dict, bs: int, items: list[dict], budget: int):
-    system = " ".join(filter(None, [SYSTEM, teacher.get("style")]))
+    system = " ".join(filter(None, [SYSTEM, _style_for(teacher, items[0]["domain"])]))
     return generate_batch(
         teacher["path"],
         [c["prompt"] for c in items],
@@ -68,9 +80,12 @@ def run(cfg: Config, teachers: list[str] | None = None, limit: int | None = None
 
         bs = tconf["batch_size"]
         retries = tconf.get("max_retries", 0)
+        # Batch within a domain: one system prompt per batch, and styles differ.
+        todo.sort(key=lambda r: r["domain"])
         with out.open("a") as f:
             for i in range(0, len(todo), bs):
                 chunk = todo[i : i + bs]
+                chunk = [c for c in chunk if c["domain"] == chunk[0]["domain"]]
 
                 comps = _gen(t, tconf, bs, chunk, t["max_tokens"])
 

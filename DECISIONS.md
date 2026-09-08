@@ -694,3 +694,42 @@ Caveat: v2 changed several things at once, so this is the most plausible
 explanation rather than an isolated one. It is cheap to act on because v1's
 traces already exist, and the prediction is testable — if v3's HumanEval
 returns to ~90%, the brevity instruction was the cause.
+
+## 30. QLoRA measured and dropped: slower and hungrier than bf16 here
+
+The plan in §23 was that a 4.9 GB base instead of 18 GB would free memory for
+longer sequences. Measured on this architecture:
+
+| config | peak memory | speed |
+|---|---:|---:|
+| bf16 LoRA @ 1024 (v1, v2) | 47.3 GB | ~10 s/iter |
+| QLoRA @ 1280 | **49.0 GB** | **~26 s/iter** |
+| QLoRA @ 1536 | OOM | — |
+
+QLoRA is **2.6x slower and uses *more* memory**. Dequantizing weights on every
+forward and backward pass costs compute and temporaries that outweigh the
+smaller weights entirely — and the activation memory that actually dominates is
+unchanged, since activations stay bf16 either way. The planned 7,800 iterations
+would have taken 56 hours.
+
+Dropped. The upside was theoretical; the cost is measured. Dropping it also
+makes v3 a clean test of the abstention hypothesis instead of two confounded
+changes, which after two null results is worth more than the experiment I gave
+up. QLoRA is now a *worse* idea than it looked, not a deferred one — anyone
+repeating this should not expect quantized training to buy headroom on a hybrid
+attention model.
+
+## 31. The abstention slice nearly died at the length cap
+
+At the 1024 cap that bf16 requires, abstention fell from 428 samples to **92**
+— 4% of the mixture, too thin to teach anything. Diagnosis: the passages are
+short (148 tokens median) but the teacher spent ~1,000 tokens deliberating over
+whether a short passage contains an answer, so 84% of the traces blew the cap.
+
+Fixed with a **per-domain style**, since §29 established that brevity is not
+uniformly safe: shortening the *code* teacher cost 5.4 pp of HumanEval, but
+deciding a passage does not mention something needs a look, not an essay. Only
+the abstention domain gets the brief instruction; code keeps its long reasoning
+and knowledge keeps the 150-word guidance.
+
+Batching now groups by domain so each batch carries one system prompt.
