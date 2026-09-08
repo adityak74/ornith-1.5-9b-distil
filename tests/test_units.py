@@ -127,3 +127,22 @@ def test_truthfulqa_choices_are_shuffled():
     assert len(gold) > 4, "gold should span several positions"
     # deterministic across calls, so runs stay comparable
     assert [i.gold for i in truthfulqa().items] == [i.gold for i in task.items]
+
+
+def test_abstention_slice_is_verified_by_declining():
+    """v3's abstention data is the fix for DECISIONS.md 28: it must accept a
+    refusal and reject a fabricated answer."""
+    from odistil.pipeline.dataset import _verify
+
+    cfg = {"verify_mcq": True, "verify_code": True, "verify_qa": True}
+    rec = {"kind": "unanswerable", "gold": "UNANSWERABLE"}
+    assert _verify({**rec, "answer": "Answer: not stated in the passage"}, cfg)[0]
+    assert _verify({**rec, "answer": "The passage does not mention this."}, cfg)[0]
+    assert not _verify({**rec, "answer": "Answer: Denver Broncos"}, cfg)[0]
+
+
+def test_v3_mixture_reserves_room_for_abstention():
+    cfg = Config.load(distill=ROOT / "configs" / "v3.yaml")
+    mix = cfg.distill["dataset"]["mix"]
+    assert 0 < mix["abstention"] <= 0.2, "too much refusal data would cost MMLU"
+    assert abs(sum(mix.values()) - 1.0) < 1e-6

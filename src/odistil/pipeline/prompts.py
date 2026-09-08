@@ -36,6 +36,13 @@ QA_TMPL = (
     "Answer accurately and concisely. If you are not confident, say so rather than guessing. "
     "End your reply with a final line of exactly 'Answer: <answer>'."
 )
+ABSTAIN_TMPL = (
+    "Read the passage and answer the question.\n\n"
+    "Passage: {context}\n\nQuestion: {question}\n\n"
+    "If the passage does not contain the answer, say so plainly instead of "
+    "guessing. End your reply with a final line of exactly "
+    "'Answer: <answer>' or 'Answer: not stated in the passage'."
+)
 CODE_TMPL = (
     "{question}\n\n"
     "Write a complete Python solution. Put the final code in a single ```python block. "
@@ -65,6 +72,17 @@ def _normalize(src: dict, row: dict, idx: int) -> dict | None:
             if row["answerKey"] not in labels:
                 return None
             prompt, gold = _mcq(row["question_stem"], list(ch["text"]), labels.index(row["answerKey"]))
+        elif hf.endswith("squad_v2"):
+            # Only the unanswerable half. Every other slice in this pipeline
+            # teaches the model to commit to an answer -- rejection sampling
+            # keeps nothing else -- which is what cost v1 11 points of
+            # abstention accuracy on TruthfulQA. See DECISIONS.md 28.
+            if row["answers"]["text"]:
+                return None
+            prompt = ABSTAIN_TMPL.format(
+                context=row["context"].strip()[:1200], question=row["question"].strip()
+            )
+            gold = "UNANSWERABLE"
         elif hf.endswith("misconceptions_tf"):
             # 'Correct' is 1.0 when the statement is true, 0.0 when it is a
             # misconception. Teaches resisting plausible falsehoods, which is

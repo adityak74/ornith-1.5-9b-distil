@@ -21,6 +21,15 @@ prompts:
     # it is still verifiable) and teaches resisting plausible falsehoods.
     # Checked: zero 8-gram overlap with TruthfulQA.
     - {hf: notrichardren/misconceptions_tf, config: default, split: train, n: 1703, kind: tf}
+  abstention:
+    # The fix for DECISIONS.md 28. Rejection sampling keeps only verifiably
+    # correct traces, so every other slice teaches the model to commit to an
+    # answer -- and v1 lost 11 points of TruthfulQA abstention accuracy as a
+    # result. SQuAD v2's unanswerable questions are the verifiable source of
+    # the opposite behaviour: gold is "the passage does not say".
+    # Only ~32% of rows are unanswerable, so 1900 sampled yields ~600 prompts.
+    - {hf: rajpurkar/squad_v2, config: squad_v2, split: train, n: 1900, kind: unanswerable}
+
   code:
     # Every MBPP split is fair game: our code eval is HumanEval, so MBPP test is
     # training data, not eval data, and all of it ships with executable tests.
@@ -46,9 +55,12 @@ dataset:
   max_seq_len: 1536      # 79% of v2's traces fit here vs 48% at 1024
   valid_frac: 0.02
   mix:                   # target proportions of the final training set
-    knowledge: 0.40
-    truthfulness: 0.25
-    code: 0.35
+    knowledge: 0.35
+    truthfulness: 0.22
+    code: 0.28
+    # Kept deliberately small: too much refusal data and the model starts
+    # declining questions it can answer, which would cost MMLU.
+    abstention: 0.15
 
 train:
   # v3 is QLoRA: the adapter trains against the *quantized* forward pass, so it

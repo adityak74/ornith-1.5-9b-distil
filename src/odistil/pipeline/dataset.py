@@ -41,6 +41,16 @@ def _verify(rec: dict, dcfg: dict) -> tuple[bool, str]:
     if kind == "mcq" and dcfg["verify_mcq"]:
         got = final_letter(answer)
         return (got == gold, f"mcq:{got}->{gold}")
+    if kind == "unanswerable":
+        from ..textnorm import final_answer
+
+        said = (final_answer(answer) or answer).lower()
+        declines = any(
+            w in said
+            for w in ("not stated", "does not", "doesn't", "no answer", "not provide",
+                      "not mention", "not contain", "cannot be determined", "unanswerable")
+        )
+        return declines, "abstain"
     if kind == "tf" and dcfg["verify_mcq"]:
         from ..textnorm import final_answer
 
