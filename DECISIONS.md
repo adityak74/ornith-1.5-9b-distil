@@ -563,3 +563,44 @@ If it loses, then three rounds have failed to beat v1 and the honest conclusion
 is that a rank-32 LoRA over a few thousand samples has extracted what it can
 from this student, and the remaining gap to the 35B teachers is capacity, not
 recipe.
+
+## 27. My TruthfulQA eval was measuring position bias, not truthfulness
+
+TruthfulQA's `mc1_targets` lists **the correct answer first in all 817 items**.
+Presenting the choices in dataset order — which is what this harness did — makes
+`A` the gold answer every time. A model that always replies "A" scores 100%.
+
+Checked against the recorded outputs: of v1's 177 correct answers, **177 were
+'A' picks**. Same for v2: 179 of 179. The score was a pure measure of how often
+the model answers 'A'.
+
+Every TruthfulQA number this harness produced is therefore void — v1 70.8%,
+v2 71.6%, shipped oQ4 72.4% — along with every comparison drawn from them.
+Fixed by shuffling each item's choices under a per-item seed (deterministic, so
+models stay comparable); gold now spans positions, 23% on 'A'. A regression
+test pins it.
+
+### This may reach further than my harness
+
+The oMLX numbers are independent measurements, so they are not void by this bug
+— **but the same trap is easy to fall into**, and it is worth checking whether
+that harness shuffles. If it does not, its TruthfulQA column is measuring the
+same thing, for every model in the table.
+
+The stakes are concrete: **the TruthfulQA regression is the entire reason v2
+exists.** §17 diagnosed it, §18 rebuilt the truthfulness slice around it, and
+§22 recorded the failure to fix it. If the regression is an artifact of choice
+ordering, then v2 was aimed at a phantom, and the "distillation costs
+truthfulness" conclusion in §15 and in the published model card needs
+revisiting rather than defending.
+
+Worth noting what *would* explain the pattern under this bug: distillation
+makes the student more decisive and less prone to defaulting to the first
+option, which lowers an always-'A' score while leaving truthfulness unchanged
+or better. That fits every observation — v1 below stock, v2 further below,
+and the effect growing with training — at least as well as the forgetting story
+in §26, and it is the more parsimonious explanation.
+
+**Next measurement, once the GPU frees up:** re-run TruthfulQA with shuffled
+choices for stock oQ4, v1 and v2. Until then, no truthfulness claim from this
+project should be treated as established.

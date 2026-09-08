@@ -70,15 +70,27 @@ def mmlu(sample: int | None = 1000, seed: int = 17) -> Task:
     return Task("mmlu", items, lambda it, out: final_letter(out, 4) == it.gold)
 
 
-def truthfulqa() -> Task:
+def truthfulqa(seed: int = 17) -> Task:
+    """TruthfulQA MC1, with the choices shuffled.
+
+    The dataset lists the correct answer **first** in every one of the 817
+    items. Presenting them in dataset order makes 'A' the gold answer every
+    time, so the score largely measures position bias -- a model that always
+    answers 'A' scores 100%. Choices are shuffled with a per-item seed, which
+    is deterministic across runs and models so comparisons stay valid.
+    """
     from datasets import load_dataset
 
     ds = load_dataset("truthfulqa/truthful_qa", "multiple_choice", split="validation")
     items = []
     for i, row in enumerate(ds):
         choices = list(row["mc1_targets"]["choices"])
-        gold = LETTERS[list(row["mc1_targets"]["labels"]).index(1)]
-        items.append(Item(f"tqa-{i}", _mcq(row["question"], choices), gold,
+        correct = choices[list(row["mc1_targets"]["labels"]).index(1)]
+        order = list(range(len(choices)))
+        random.Random(f"{seed}:tqa:{i}").shuffle(order)
+        shuffled = [choices[j] for j in order]
+        gold = LETTERS[shuffled.index(correct)]
+        items.append(Item(f"tqa-{i}", _mcq(row["question"], shuffled), gold,
                           {"n_choices": len(choices)}))
     return Task(
         "truthfulqa",

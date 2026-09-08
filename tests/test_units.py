@@ -112,3 +112,18 @@ def test_v3_trains_against_the_quantized_checkpoint():
     assert cfg.train_base() != cfg.student_base()
     assert cfg.train_base().endswith("oQ4")
     assert cfg.distill["train"]["max_seq_length"] == cfg.distill["dataset"]["max_seq_len"]
+
+
+def test_truthfulqa_choices_are_shuffled():
+    """The dataset lists the correct answer first in all 817 items; presenting
+    them in that order makes the benchmark measure position bias."""
+    import collections
+
+    from odistil.eval.tasks import truthfulqa
+
+    task = truthfulqa()
+    gold = collections.Counter(i.gold for i in task.items)
+    assert gold["A"] / len(task.items) < 0.4, "gold still concentrated on A"
+    assert len(gold) > 4, "gold should span several positions"
+    # deterministic across calls, so runs stay comparable
+    assert [i.gold for i in truthfulqa().items] == [i.gold for i in task.items]

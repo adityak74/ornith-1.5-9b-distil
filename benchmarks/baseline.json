@@ -158,6 +158,21 @@
         "seconds": 2785.5
       },
       "note": "produced by this repo; measured on the oMLX server 2026-09-06"
+    },
+    "Ornith-1.5-9B-MLX-distil-v2-oQ4": {
+      "mmlu": {
+        "accuracy": 0.831,
+        "correct": 831,
+        "total": 1000,
+        "seconds": 12427.0
+      },
+      "truthfulqa": {
+        "accuracy": 0.769,
+        "correct": 628,
+        "total": 817,
+        "seconds": 11648.3
+      },
+      "note": "v2, measured on oMLX 2026-09-08; HumanEval pending. Not released."
     }
   },
   "targets": {
