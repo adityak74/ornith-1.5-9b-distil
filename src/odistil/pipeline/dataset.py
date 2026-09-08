@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -68,7 +69,41 @@ def _verify(rec: dict, dcfg: dict) -> tuple[bool, str]:
     return True, "unverified"
 
 
+_ABSTAIN_JUDGE = re.compile(
+    r"(passage|text|document|context|article)[^.]{0,80}?"
+    r"(does not|doesn't|never|no mention|not mention|not state|not contain|not provide|is silent)",
+    re.IGNORECASE,
+)
+_ABSTAIN_NOISE = re.compile(
+    r"answer:|final line|sentences?\)|looks solid|end of thought|output matches|format|->|"
+    r"say so plainly|guessing|✅|\[done\]",
+    re.IGNORECASE,
+)
+
+
+def abstention_reasoning(think: str | None) -> str | None:
+    """The teacher's own judgement sentence, pulled out of a rambling trace.
+
+    Abstention traces run ~1,300 tokens and blow the training cap, and asking
+    the teacher for brevity made them *longer* (DECISIONS.md 31). Most of that
+    length is self-checking -- "Output matches requirements. End of thought
+    process." -- rather than reasoning. This keeps the last sentence that
+    actually states the passage does not answer the question, and drops the
+    sample when there isn't one. Selection, not fabrication.
+    """
+    for sentence in reversed(re.split(r"(?<=[.!?])\s+", (think or "").strip())):
+        sentence = sentence.strip().strip('"').lstrip("- ")
+        if 30 < len(sentence) < 300 and _ABSTAIN_JUDGE.search(sentence) and not _ABSTAIN_NOISE.search(sentence):
+            return sentence
+    return None
+
+
 def _target(rec: dict, keep_think: bool) -> str:
+    if rec["kind"] == "unanswerable" and keep_think:
+        judgement = abstention_reasoning(rec.get("think"))
+        if judgement:
+            return f"<think>\n{judgement}\n</think>\n\n{rec['answer']}"
+        return ""   # no usable judgement -- dropped by the empty check below
     if keep_think and rec.get("think"):
         return f"<think>\n{rec['think']}\n</think>\n\n{rec['answer']}"
     return rec["answer"]
@@ -111,6 +146,9 @@ def build(cfg: Config, skip_decontam: bool = False) -> tuple[Path, Path]:
                 ok, why = _verify(rec, dcfg)
                 if not ok:
                     stats[f"reject:{why.split(':')[0]}"] += 1
+                    continue
+                if not _target(rec, keep_think).strip():
+                    stats["reject:no_judgement"] += 1
                     continue
                 if _too_long(cfg, rec, keep_think, cap, tok):
                     stats["reject:too_long"] += 1
