@@ -29,9 +29,10 @@ teachers:
     repo: ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
     local: /Volumes/SATECHI/.omlx/ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
     domains: [code, agentic, tools]
-    # v1 ran without this and lost 356 code traces to the length cap -- more
-    # than it lost to wrong answers.
-    style: "Reason briefly before writing the code; do not restate the problem."
+    # No brevity instruction, deliberately. v2 added one to fit the length cap
+    # and HumanEval fell 90.8% -> 85.4%, below even the stock model: shorter
+    # teacher reasoning taught the student to think less about code, and code
+    # is where reasoning pays. v3 raises the cap instead. See DECISIONS.md 29.
     max_tokens: 2048
     temp: 0.4
     top_p: 0.95

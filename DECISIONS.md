@@ -661,3 +661,36 @@ to **80.5%** against stock's 80.7% — neutralising the regression while keeping
 If v3 adds abstention data and TruthfulQA does not move toward 80%, this
 hypothesis is wrong too and the project should stop theorising about this
 metric.
+
+## 29. Telling the code teacher to be brief cost 5.4 points of HumanEval
+
+v2 complete, on oMLX at full protocol:
+
+| benchmark | v1 | v2 | delta |
+|---|---:|---:|---:|
+| MMLU | 83.5% | 83.1% | −0.4 |
+| TruthfulQA | 79.0% | 76.9% | −2.1 |
+| HumanEval | **90.8%** | **85.4%** | **−5.4** |
+
+v2 is worse on all three, and its HumanEval is **below the stock oQ4's 87.8%** —
+the distillation made code worse than not distilling at all.
+
+The likely cause is §21's "success". The code teacher was given a brevity
+instruction to fit more traces under the length cap, and it worked: median
+reasoning fell from 1,328 to 1,034 characters and the code slice grew from 421
+to 530 samples. But **shorter teacher reasoning taught the student to think
+less about code**, and code is exactly where reasoning pays — the same effect
+§15 measured from the other direction, where the gain came from reasoning that
+terminates *after* reaching an answer rather than before.
+
+More data of a worse kind lost to less data of a better kind, by 5.4 points.
+
+Acted on for v3: the brevity instruction is removed from the code teacher, and
+v3 uses **v1's code traces** — same 974 prompts, long reasoning, already on
+disk. The raised 1536-token cap is the right way to keep more of them; asking
+the teacher to think less was not.
+
+Caveat: v2 changed several things at once, so this is the most plausible
+explanation rather than an isolated one. It is cheap to act on because v1's
+traces already exist, and the prediction is testable — if v3's HumanEval
+returns to ~90%, the brevity instruction was the cause.

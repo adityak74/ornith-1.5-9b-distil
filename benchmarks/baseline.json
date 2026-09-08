@@ -172,7 +172,13 @@
         "total": 817,
         "seconds": 11648.3
       },
-      "note": "v2, measured on oMLX 2026-09-08; HumanEval pending. Not released."
+      "note": "v2, measured on oMLX 2026-09-08. Worse than v1 on all three; not released.",
+      "humaneval": {
+        "accuracy": 0.854,
+        "correct": 140,
+        "total": 164,
+        "seconds": 2420.0
+      }
     }
   },
   "targets": {
