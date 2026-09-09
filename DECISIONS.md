@@ -781,3 +781,58 @@ If anything is worth trying later it is qualitatively different — offline
 top-k logit distillation, which the shared 248,044-token vocabulary permits and
 which trains against the teacher's full distribution rather than one sampled
 completion. Not another data mixture.
+
+## 33. The training wall was an implementation gap, and it is now fixed
+
+`mlx_lm.models.gated_delta` trains the gated-delta layers through a **sequential
+Python loop over every timestep** — `use_kernel=not self.training`, because the
+fast Metal kernel used at inference has no VJP. Its own docstring calls it a
+"reference implementation for prompt prefill". Measured on one layer of this
+model: **~8 MB of autograd state per token**, scaling linearly, and superlinear
+in time.
+
+That is not how the architecture is meant to train. Gated DeltaNet
+([arXiv:2412.06464](https://arxiv.org/abs/2412.06464)) inherits the chunkwise
+parallel form of DeltaNet ([arXiv:2406.06484](https://arxiv.org/abs/2406.06484)),
+which turns O(T) materialised states into O(T/C) and replaces the loop with
+matmuls. `src/odistil/gdn_chunkwise.py` implements it.
+
+**One GDN layer, forward + backward:**
+
+| seq | mlx-lm sequential | chunkwise C=64 | gain |
+|---:|---:|---:|---|
+| 512 | 4.29 GB / 0.36 s | 0.33 GB / 0.04 s | 13x mem, 10x speed |
+| 1024 | 10.18 GB / 1.18 s | 0.99 GB / 0.09 s | 10x mem, 13x speed |
+| 2048 | 31.44 GB / 4.21 s | 1.74 GB / 0.22 s | **18x mem, 19x speed** |
+
+**Correctness.** Forward and all five gradients agree with the reference to
+~3e-7 relative in fp32, including the model's real regime (RMS-normalised
+unit-norm keys, weak and strong decay) and the padded-chunk path. On the full
+9B, our path agrees with the *inference kernel* at **100% top-1** and differs
+from mlx-lm's sequential path by the same margin the kernel does — i.e. it sits
+inside mlx-lm's own tolerance. Three regression tests pin this.
+
+**Two things the derivation needed.** `mx.linalg.tri_inv` is CPU-only and has no
+VJP, so it cannot appear in a training graph — the unit-triangular inverse is
+built from matmuls via 2x2 block recursion in log2(C) levels. And the textbook
+formulation divides by the cumulative decay G_j, which underflows and sends the
+intermediate writes to infinity on strongly-decaying heads; everything is
+therefore expressed in ratios G_j/G_i, bounded by 1 for i <= j.
+
+### What it unlocks
+
+The 1024-token cap was a memory limit, and it was the dominant data filter in
+every run: it rejected 46% of everything generated, six times what wrong answers
+cost. At 2048, with the same traces already on disk:
+
+| | 1024 cap | 2048 cap |
+|---|---:|---:|
+| training samples | 2,704 | **4,876** |
+| rejected for length | 2,391 | **219** |
+| code | 421 | 701 |
+| knowledge | 880 | 2,112 |
+| truthfulness | 876 | 1,536 |
+
+**+80% training data, no regeneration.** Peak memory at 2048 is 41.8 GB, below
+the 47.3 GB that 1024 used to require, and 3072 also fits. Rank, batch size and
+full fine-tuning with a factored optimiser are all back on the table.

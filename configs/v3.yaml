@@ -52,7 +52,7 @@ dataset:
   verify_code: true      # generated code must pass the dataset's own tests
   verify_qa: true        # normalized-substring match against gold aliases
   decontaminate_ngram: 13
-  max_seq_len: 1024      # must match train.max_seq_length
+  max_seq_len: 2048      # 94% of traces fit here against 48% at 1024
   valid_frac: 0.02
   mix:                   # target proportions of the final training set
     knowledge: 0.35
@@ -82,8 +82,9 @@ train:
   learning_rate: 3.0e-5   # lowered with the effective batch (4 -> 1)
   lr_schedule: cosine_decay
   warmup: 150
-  max_seq_length: 1024    # bf16 ceiling, measured; 1280 OOMs
+  max_seq_length: 2048    # chunkwise path: 41.8 GB peak, was OOM at 1280
                           # measure before trusting -- fall back to 1280
+  gdn_chunk: 64           # chunkwise gated-delta training path (0 = mlx-lm default)
   grad_checkpoint: true
   clear_cache_threshold: 8
   steps_per_eval: 400

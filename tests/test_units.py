@@ -158,3 +158,72 @@ def test_v3_mixture_reserves_room_for_abstention():
     mix = cfg.distill["dataset"]["mix"]
     assert 0 < mix["abstention"] <= 0.2, "too much refusal data would cost MMLU"
     assert abs(sum(mix.values()) - 1.0) < 1e-6
+
+
+def test_chunkwise_gated_delta_matches_the_reference():
+    """The chunkwise training path must agree with mlx-lm's sequential one,
+    including in the model's real regime: unit-norm keys and strong decay."""
+    import mlx.core as mx
+    from mlx_lm.models.gated_delta import gated_delta_ops
+
+    from odistil.gdn_chunkwise import gated_delta_chunkwise
+
+    mx.random.seed(0)
+    B, T, Hk, Dk, Hv, Dv = 1, 96, 2, 64, 4, 64
+    inv = Dk**-0.5
+    q = (inv**2) * mx.fast.rms_norm(mx.random.normal((B, T, Hk, Dk)), None, 1e-6)
+    k = inv * mx.fast.rms_norm(mx.random.normal((B, T, Hk, Dk)), None, 1e-6)
+    v = mx.random.normal((B, T, Hv, Dv))
+    beta = mx.sigmoid(mx.random.normal((B, T, Hv)))
+    s0 = mx.zeros((B, Hv, Dv, Dk))
+
+    for gmean in (3.0, 0.0):          # weak and strong decay
+        g = mx.sigmoid(mx.random.normal((B, T, Hv)) * 0.5 + gmean)
+        yr, sr = gated_delta_ops(q, k, v, g, beta, s0)
+        for chunk in (16, 64):        # 96 exercises the padded path at C=64
+            yc, sc = gated_delta_chunkwise(q, k, v, g, beta, s0, chunk=chunk)
+            scale = float(mx.abs(yr).max())
+            assert float(mx.abs(yr - yc).max()) / scale < 1e-4
+            assert float(mx.abs(sr - sc).max()) / float(mx.abs(sr).max()) < 1e-4
+
+
+def test_chunkwise_gradients_match_the_reference():
+    import mlx.core as mx
+    from mlx_lm.models.gated_delta import gated_delta_ops
+
+    from odistil.gdn_chunkwise import gated_delta_chunkwise
+
+    mx.random.seed(1)
+    B, T, Hk, Dk, Hv, Dv = 1, 64, 2, 32, 2, 32
+    q = mx.random.normal((B, T, Hk, Dk)) * 0.3
+    k = mx.random.normal((B, T, Hk, Dk)) * 0.3
+    v = mx.random.normal((B, T, Hv, Dv))
+    g = mx.sigmoid(mx.random.normal((B, T, Hv)) * 0.5 + 2.0)
+    beta = mx.sigmoid(mx.random.normal((B, T, Hv)))
+    s0 = mx.zeros((B, Hv, Dv, Dk))
+    w = mx.random.normal((B, T, Hv, Dv))
+
+    def make(fn, **kw):
+        def loss(q, k, v, g, beta):
+            y, s = fn(q, k, v, g, beta, s0, **kw)
+            return (y * w).sum() + (s * s).sum()
+        return loss
+
+    args = (q, k, v, g, beta)
+    ref = mx.grad(make(gated_delta_ops), argnums=(0, 1, 2, 3, 4))(*args)
+    got = mx.grad(make(gated_delta_chunkwise, chunk=16), argnums=(0, 1, 2, 3, 4))(*args)
+    for a, b in zip(ref, got):
+        assert float(mx.abs(a - b).max()) / max(float(mx.abs(a).max()), 1e-9) < 1e-4
+
+
+def test_unit_tri_inv_is_exact_and_differentiable():
+    import mlx.core as mx
+
+    from odistil.gdn_chunkwise import unit_tri_inv
+
+    mx.random.seed(2)
+    m = mx.eye(8) + mx.tril(mx.random.normal((3, 8, 8)) * 0.4, -1)
+    assert float(mx.abs(unit_tri_inv(m) @ m - mx.eye(8)).max()) < 1e-5
+    g = mx.grad(lambda x: unit_tri_inv(mx.eye(4) + mx.tril(x, -1)).sum())(mx.random.normal((4, 4)))
+    mx.eval(g)
+    assert not bool(mx.any(mx.isnan(g)))

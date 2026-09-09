@@ -61,7 +61,15 @@ def train(cfg: Config, resume: bool = False, extra: list[str] | None = None) -> 
     adapter_dir = cfg.path("adapters")
     adapter_dir.mkdir(parents=True, exist_ok=True)
     conf = _yaml(cfg, adapter_dir)
-    cmd = [sys.executable, "-m", "mlx_lm", "lora", "-c", str(conf)]
+    tcfg0 = cfg.distill["train"]
+    chunk = tcfg0.get("gdn_chunk", 0)
+    if chunk:
+        # Route the gated-delta layers through the chunkwise training path;
+        # mlx-lm's default is a per-timestep loop that costs ~8 MB/token/layer.
+        cmd = [sys.executable, "-m", "odistil.train_entry", "--gdn-chunk", str(chunk),
+               "-c", str(conf)]
+    else:
+        cmd = [sys.executable, "-m", "mlx_lm", "lora", "-c", str(conf)]
     # Keep the allocator from growing into Metal's live-resource limit.
     tcfg = cfg.distill["train"]
     if tcfg.get("clear_cache_threshold"):
