@@ -733,3 +733,51 @@ the abstention domain gets the brief instruction; code keeps its long reasoning
 and knowledge keeps the 150-word guidance.
 
 Batching now groups by domain so each batch carries one system prompt.
+
+## 32. v3: both predictions failed. v1 stands, and the project should stop here.
+
+| benchmark | v1 | v3 | predicted | outcome |
+|---|---:|---:|---:|---|
+| MMLU | 83.5% | **83.6%** | ~83.5 | held ✓ |
+| TruthfulQA | 79.0% | **77.4%** | ~80.5 | **−1.6, wrong ✗** |
+| HumanEval | 90.8% | **87.2%** | ~90 | **−3.6, wrong ✗** |
+
+**The abstention hypothesis (§28) is refuted.** 527 samples whose correct answer
+is "the passage does not say" — 19.5% of training, the first data of that kind
+this project produced — moved TruthfulQA *down* 1.6 points. The §28 diagnosis
+was well-evidenced (11-point hedge gap, p ≈ 0.016) and the intervention still
+did not work. That is now four hypotheses about this metric, all wrong.
+
+**The brevity hypothesis (§29) is also refuted, and this one is diagnostic.**
+v3 used **v1's exact code traces** — the same 421 samples — and still lost 3.6
+points of HumanEval. So the brevity instruction was not what cost v2 its code
+score.
+
+| run | samples | code | code share | steps | MMLU | TQA | HumanEval |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| v1 | 1,672 | 421 | 25% | 3,200 | 83.5 | 79.0 | **90.8** |
+| v2 | 2,286 | 530 | 23% | 3,200 | 83.1 | 76.9 | 85.4 |
+| v3 | 2,704 | 421 | 16% | 5,200 | **83.6** | 77.4 | 87.2 |
+
+What actually tracks the damage is **how much non-code training surrounds the
+code data**. v1 has the smallest dataset, the fewest steps, the highest code
+share — and the best HumanEval and TruthfulQA by a clear margin. Every attempt
+to add data has cost capability outside the slice being added, while MMLU
+saturated at v1's level and never moved again (83.5 → 83.1 → 83.6).
+
+### The conclusion this project has earned
+
+Distillation into this student buys **one thing**: it repairs what quantization
+broke — reasoning that terminates. That was v1: +5.5 MMLU, +3.0 HumanEval, and
+a third off the generation time, from 1,672 samples and three GPU-hours of
+training. It is banked and released.
+
+Beyond that, more data does not help, and three rounds of trying have each cost
+something. The gap that remains to the 35B teachers is capacity, not recipe, and
+a rank-32 LoRA over a few thousand samples cannot close it. **v1 is the release
+and the project should stop iterating on data.**
+
+If anything is worth trying later it is qualitatively different — offline
+top-k logit distillation, which the shared 248,044-token vocabulary permits and
+which trains against the teacher's full distribution rather than one sampled
+completion. Not another data mixture.

@@ -179,6 +179,27 @@
         "total": 164,
         "seconds": 2420.0
       }
+    },
+    "Ornith-1.5-9B-MLX-distil-v3-oQ4": {
+      "mmlu": {
+        "accuracy": 0.836,
+        "correct": 836,
+        "total": 1000,
+        "seconds": 11241.2
+      },
+      "truthfulqa": {
+        "accuracy": 0.774,
+        "correct": 632,
+        "total": 817,
+        "seconds": 9643.6
+      },
+      "humaneval": {
+        "accuracy": 0.872,
+        "correct": 143,
+        "total": 164,
+        "seconds": 2737.7
+      },
+      "note": "v3, oMLX 2026-09-09. Abstention slice + v1 code traces. Not released; v1 still best."
     }
   },
   "targets": {
