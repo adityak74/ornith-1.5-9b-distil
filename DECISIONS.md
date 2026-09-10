@@ -836,3 +836,53 @@ cost. At 2048, with the same traces already on disk:
 **+80% training data, no regeneration.** Peak memory at 2048 is 41.8 GB, below
 the 47.3 GB that 1024 used to require, and 3072 also fits. Rank, batch size and
 full fine-tuning with a factored optimiser are all back on the table.
+
+## 34. Upstream contributions, and one deliberately not made
+
+**PR #1 — chunkwise gated delta (open):**
+[ml-explore/mlx-lm#1870](https://github.com/ml-explore/mlx-lm/pull/1870).
+`gated_delta_ops` becomes a dispatcher: scalar gating without a mask takes the
+chunkwise path, everything else goes to `gated_delta_sequential` (the existing
+loop, renamed to say what it is). Five model families train through this code —
+`qwen3_5`, `qwen3_next`, `kimi_k3`, `kimi_linear`, `bailing_moe_v3`.
+
+The first attempt conflicted with current `main`, and rebasing was impossible
+because syncing the fork needs a `workflow` token scope. Solved by moving the
+change into `gated_delta_ops`, a region upstream had not touched, instead of
+the dispatch condition, which it had. GitHub now reports MERGEABLE, and the
+merged tree was verified locally: suite passes, training dispatch agrees with
+the Metal kernel to 1.5e-6.
+
+**PR #2 — fused triangular solve (branch pushed, PR not yet opened):**
+`adityak74/mlx-lm:gated-delta-fused-solve`, body in
+`docs/mlx-lm-pr2-body.md`. Profiling the chunkwise path showed the per-chunk
+inverse was 5.07 ms of ~9.3 ms, and it is used exactly once as `inv @ rhs` — so
+the fix is to solve rather than invert. Substitution in one Metal kernel, with
+`mx.custom_function` supplying the gradient autodiff cannot derive through a
+hand-written kernel:
+
+    x = A^-1 b  =>  b_bar = A^-T x_bar,  A_bar = tril(-b_bar x^T, -1)
+
+Another 2.1-2.7x. Cumulative against stock mlx-lm at 4096 tokens: **108.33 GB /
+39.02 s to 4.60 GB / 0.29 s — 24x memory, 135x speed.**
+
+GitHub rate-limited a second PR from the account, which is no loss: stacking on
+an unreviewed PR is poor practice, and this one waits for #1.
+
+**#3 — GPU `tri_inv` in mlx core: dropped, deliberately.**
+
+Scoped as a contribution, then abandoned once the ground truth turned up.
+[Issue #1392](https://github.com/ml-explore/mlx/issues/1392) is open and
+[PR #4375](https://github.com/ml-explore/mlx/pull/4375) already attempted it,
+closed as a draft. The reported numbers kill the obvious approach: an
+MPS-backed Metal inverse runs **20x slower than CPU at 64x64** and only wins
+past 4096x4096, and there is a suspected Apple MPS bug where batched LU returns
+zeros for batch 1. The PR is blocked on an unmade maintainer decision, not on
+someone writing code.
+
+Our own kernel is the counter-evidence: batched 64x64 unit-triangular solve
+holds 1.06 -> 1.22 ms from 32 to 1024 matrices, while CPU goes 0.27 -> 7.18 ms.
+A custom kernel handles the regime MPS cannot — though a triangular solve is a
+far easier problem than general LU inversion, so it argues a direction rather
+than solving their problem. Worth a comment on #1392 if anyone picks this up
+again; not worth a duplicate PR.

@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import mlx.core as mx
 
+from .tri_solve import unit_tri_solve
+
 NEG_INF = -1e30
 
 
@@ -134,11 +136,10 @@ def gated_delta_chunkwise(
         kkt = kc @ mx.swapaxes(kc, -1, -2)                        # [B,H,C,C]
         # system matrix: I + b_j (k_i . k_j)(G_j/G_i) for i < j
         sys = eye + mx.where(strict, bc[..., :, None] * kkt * rat, 0.0)
-        inv = unit_tri_inv(sys)
 
         ks0 = kc @ mx.swapaxes(s, -1, -2)                         # [B,H,C,Dv]
         rhs = bc[..., None] * (vc - gam[..., None] * ks0)
-        u = inv @ rhs                                             # scaled pseudo-values
+        u = unit_tri_solve(sys, rhs)                              # scaled pseudo-values
 
         qk = mx.where(causal, (qc @ mx.swapaxes(kc, -1, -2)) * rat, 0.0)
         ys.append(gam[..., None] * (qc @ mx.swapaxes(s, -1, -2)) + qk @ u)
