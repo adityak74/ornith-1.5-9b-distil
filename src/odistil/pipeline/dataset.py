@@ -174,6 +174,13 @@ def build(cfg: Config, skip_decontam: bool = False) -> tuple[Path, Path]:
         stats[f"mix:{domain}"] = n
     rng.shuffle(samples)
 
+    # Optional hard cap, so a run can hold sample count constant while the
+    # length cap changes -- otherwise raising max_seq_len confounds "different
+    # data" with "more data", and more data has not helped (DECISIONS.md 32).
+    if (limit := dcfg.get("max_samples")) and len(samples) > limit:
+        stats["capped_to"] = limit
+        samples = samples[:limit]
+
     n_valid = max(int(len(samples) * dcfg["valid_frac"]), 1) if samples else 0
     splits = {"valid": samples[:n_valid], "train": samples[n_valid:]}
 

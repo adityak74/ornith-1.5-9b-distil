@@ -886,3 +886,41 @@ A custom kernel handles the regime MPS cannot — though a triangular solve is a
 far easier problem than general LU inversion, so it argues a direction rather
 than solving their problem. Worth a comment on #1392 if anyone picks this up
 again; not worth a duplicate PR.
+
+## 35. v4: the first run without the length bias
+
+Every model so far trained on whatever fit under a 1024-token cap, and that cap
+was not a random filter. For v1's recipe:
+
+| | traces | median tokens |
+|---|---:|---:|
+| trained on | 1,758 | 678 |
+| **never seen** | **1,735** | **1,449** |
+
+v1 learned exclusively from the teacher's terse half. §29 had already shown
+that shorter code reasoning costs HumanEval — 5.4 points when the code teacher
+was told to be brief — so the cap was plausibly doing the same thing silently
+to every slice.
+
+The chunkwise path (§33) makes 2048-token training fit, so v4 tests exactly
+that one variable:
+
+| held constant | changed |
+|---|---|
+| 1,639 train / 33 valid, same as v1 | median trace 686 -> **1,010** |
+| same slices and 40/25/35 mixture | p90 963 -> **1,758** |
+| 3,200 steps, rank 32, top 16 layers, lr 3e-5 | max 1,034 -> 2,058 |
+
+A `max_samples` cap was added to the dataset stage for this: lifting the length
+limit otherwise smuggles in extra volume, and volume has failed twice (§32).
+The config is built from v1's, not v3's — starting from v3 would have dragged
+in the misconception slice and abstention data and confounded the test.
+
+**Training:** 2.79M tokens in 7.1 hours against v1's 1.76M in 8.6 — 58% more
+tokens in less wall clock, because the chunkwise path also doubled throughput
+end to end (55 -> 111 tokens/s). Train loss 0.119, val 0.305, peak 46.9 GB.
+
+Prediction on the record before measuring: **HumanEval improves most**, since
+that is where trace length is known to matter. If nothing moves, four runs will
+have failed to beat v1 on data composition, and the remaining lever is method —
+offline top-k logit distillation — not another mixture.
