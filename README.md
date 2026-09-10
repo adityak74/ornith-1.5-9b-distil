@@ -13,7 +13,9 @@ Two-teacher distillation of **Ornith-1.5-9B** on Apple Silicon / MLX.
 Goal: take the shipped oQ4 student from **78.0 / 80.7 / 87.8** to
 **86–89 / 86–89 / 92–94** on MMLU / TruthfulQA / HumanEval, at ~5–6 GB.
 
-Full reasoning, targets and open questions: [`docs/PLAN.md`](docs/PLAN.md).
+What worked and what didn't: [`RETROSPECTIVE.md`](RETROSPECTIVE.md).
+Every decision and dead end: [`DECISIONS.md`](DECISIONS.md).
+Original plan and targets: [`docs/PLAN.md`](docs/PLAN.md).
 Measured baselines: [`benchmarks/baseline.json`](benchmarks/baseline.json).
 
 ## Setup
