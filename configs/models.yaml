@@ -1,22 +1,27 @@
 # Model registry. Repo ids are HuggingFace ids; `local` overrides with a path on disk.
 
+# Root of the local MLX model store. Override with the OMLX_MODEL_DIR
+# environment variable; the default is the oMLX server's model_dir on the
+# machine this was developed on (see ~/.omlx/settings.json for yours).
+model_dir: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}
+
 # Where a finished model is installed for the oMLX server to pick up.
-install_dir: /Volumes/SATECHI/.omlx
+install_dir: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}
 
 student:
   base:            # full-precision student we actually train (bf16, 17 GB)
     repo: ornith-ai/Ornith-1.5-9B-MLX
-    local: /Volumes/SATECHI/.omlx/ornith-ai/Ornith-1.5-9B-MLX
+    local: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}/ornith-ai/Ornith-1.5-9B-MLX
   quantized:       # existing oQ artifacts -- eval targets and quant references
-    oq8: /Volumes/SATECHI/.omlx/Ornith-1.5-9B-MLX-oQ8
-    oq4: /Volumes/SATECHI/.omlx/Ornith-1.5-9B-MLX-oQ4
-    oq3: /Volumes/SATECHI/.omlx/Ornith-1.5-9B-MLX-oQ3
-    oq2: /Volumes/SATECHI/.omlx/Ornith-1.5-9B-MLX-oQ2
+    oq8: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}/Ornith-1.5-9B-MLX-oQ8
+    oq4: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}/Ornith-1.5-9B-MLX-oQ4
+    oq3: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}/Ornith-1.5-9B-MLX-oQ3
+    oq2: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}/Ornith-1.5-9B-MLX-oQ2
 
 teachers:
   knowledge:       # MMLU / TruthfulQA-style: strongest general teacher
     repo: lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit
-    local: /Volumes/SATECHI/.omlx/lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit
+    local: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}/lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit
     domains: [knowledge, reasoning, truthfulness, abstention]
     # Half of all traces are dropped for exceeding the 1024-token training cap,
     # so the teacher is asked to keep reasoning short. Rejection sampling still
@@ -32,7 +37,7 @@ teachers:
     top_p: 0.95
   code:            # matches Qwen on HumanEval at ~4.6x the throughput
     repo: ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
-    local: /Volumes/SATECHI/.omlx/ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
+    local: ${OMLX_MODEL_DIR:-/Volumes/SATECHI/.omlx}/ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit
     domains: [code, agentic, tools]
     # No brevity instruction, deliberately. v2 added one to fit the length cap
     # and HumanEval fell 90.8% -> 85.4%, below even the stock model: shorter
@@ -42,7 +47,7 @@ teachers:
     temp: 0.4
     top_p: 0.95
 
-# Weights live on the external volume /Volumes/SATECHI/.omlx (the oMLX model dir
-# from ~/.omlx/settings.json). It must be mounted; `odistil check` verifies this.
+# Paths resolve from OMLX_MODEL_DIR (see the top of this file). `odistil check`
+# verifies the directory exists and every checkpoint is present before a run.
 # Verified 2026-09-04: student and both teachers share an identical 248044-token
 # vocabulary (same token->id map), so top-k logit distillation is viable (v2).

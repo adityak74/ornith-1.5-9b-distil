@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,9 +14,27 @@ ROOT = Path(__file__).resolve().parents[2]
 CONFIGS = ROOT / "configs"
 
 
+_ENV_REF = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}")
+
+
+def _expand(value: Any) -> Any:
+    """Resolve ${VAR} and ${VAR:-default} in config strings.
+
+    Model locations differ per machine, so paths are written against
+    OMLX_MODEL_DIR with the author's oMLX model_dir as the default.
+    """
+    if isinstance(value, str):
+        return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), m.group(2) or ""), value)
+    if isinstance(value, dict):
+        return {k: _expand(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand(v) for v in value]
+    return value
+
+
 def _load(path: Path) -> dict[str, Any]:
     with path.open() as f:
-        return yaml.safe_load(f)
+        return _expand(yaml.safe_load(f))
 
 
 @dataclass

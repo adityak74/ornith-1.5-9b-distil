@@ -25,9 +25,15 @@ make setup   # uv sync (python 3.12, mlx, mlx-lm, datasets)
 make check   # volume mounted? models present? tokenizers compatible?
 ```
 
-All six checkpoints are already on the external volume `/Volumes/SATECHI/.omlx`
-(the oMLX model dir), wired into `configs/models.yaml` — nothing to download,
-but the volume has to be mounted. `runs/` stays on the internal disk.
+Model paths come from `configs/models.yaml`, which reads `OMLX_MODEL_DIR`
+(defaulting to the oMLX server's model dir). Point it at wherever your
+checkpoints live:
+
+```bash
+export OMLX_MODEL_DIR=~/.cache/mlx-models   # or your oMLX model_dir
+```
+
+`runs/` stays on local disk and is gitignored.
 
 ## Pipeline
 

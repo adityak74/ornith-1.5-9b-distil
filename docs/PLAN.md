@@ -95,8 +95,8 @@ one is dropped before writing `train.jsonl`.
 
 ## What the checkpoints actually are (verified on disk)
 
-Everything lives on `/Volumes/SATECHI/.omlx` (the oMLX model dir from
-`~/.omlx/settings.json`), wired into `configs/models.yaml`:
+Everything lives under the directory `configs/models.yaml` resolves from
+`OMLX_MODEL_DIR` (the oMLX server's `model_dir`, per `~/.omlx/settings.json`):
 
 - `ornith-ai/Ornith-1.5-9B-MLX` — unquantized **bf16**, hidden 4096,
   `model_type: qwen3_5`, 17 GB. Trainable as-is.
