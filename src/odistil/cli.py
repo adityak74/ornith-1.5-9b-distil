@@ -65,6 +65,29 @@ def cmd_train(args) -> int:
     return 0
 
 
+def cmd_logits(args) -> int:
+    from .logits import extract
+
+    cfg = _cfg(args)
+    for split in ("train", "valid"):
+        extract(cfg, split=split, top_k=args.top_k)
+    return 0
+
+
+def cmd_distill(args) -> int:
+    from .pipeline.distill_train import sanity_check, train
+
+    cfg = _cfg(args)
+    d = cfg.distill.get("distill", {})
+    alpha = args.alpha if args.alpha is not None else d.get("alpha", 0.3)
+    top_k = d.get("top_k", 64)
+    if args.check:
+        sanity_check(cfg, alpha=alpha, top_k=top_k)
+        return 0
+    train(cfg, alpha=alpha, top_k=top_k)
+    return 0
+
+
 def cmd_fuse(args) -> int:
     from .pipeline.train import fuse
 
@@ -136,6 +159,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--resume", action="store_true")
     s.add_argument("extra", nargs="*", help="extra flags passed through to mlx_lm lora")
     s.set_defaults(fn=cmd_train)
+
+    s = sub.add_parser("logits", help="stage 3b: teacher top-k logprobs for logit distillation")
+    s.add_argument("--top-k", type=int, default=64)
+    s.set_defaults(fn=cmd_logits)
+
+    s = sub.add_parser("distill", help="stage 4b: train against the teacher's distribution")
+    s.add_argument("--alpha", type=float, help="weight on hard-target CE (default from config)")
+    s.add_argument("--check", action="store_true", help="one batch through the loss, then stop")
+    s.set_defaults(fn=cmd_distill)
 
     s = sub.add_parser("fuse", help="stage 5: fuse adapters into the trained-on base")
     s.add_argument("--dequantize", action="store_true",
