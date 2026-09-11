@@ -924,3 +924,53 @@ Prediction on the record before measuring: **HumanEval improves most**, since
 that is where trace length is known to matter. If nothing moves, four runs will
 have failed to beat v1 on data composition, and the remaining lever is method —
 offline top-k logit distillation — not another mixture.
+
+## 36. v4 result: the length bias did not matter. Data composition is closed.
+
+| run | MMLU | TruthfulQA | HumanEval | vs v1 |
+|---|---:|---:|---:|---|
+| stock oQ4 | 78.0% | **80.7%** | 87.8% | −5.5 / +1.7 / −3.0 |
+| **v1 (shipped)** | **83.5%** | 79.0% | **90.8%** | — |
+| v2 | 83.1% | 76.9% | 85.4% | −0.4 / −2.1 / −5.4 |
+| v3 | 83.6% | 77.4% | 87.2% | +0.1 / −1.6 / −3.6 |
+| v4 | 83.2% | 76.6% | 89.6% | −0.3 / −2.4 / −1.2 |
+
+**The prediction in §35 was wrong.** HumanEval was supposed to improve most; it
+fell 1.2 points. Every v4 delta is inside its noise band, and all three lean
+negative — the same shape as v2 and v3.
+
+This was the best-motivated data experiment of the four. The bias was real and
+large: v1 trained on 1,758 traces of median 678 tokens and never saw 1,735 of
+median 1,449. §29 had independently shown that shortening code reasoning costs
+5.4 points. Removing the bias, with sample count and step count held constant,
+changed nothing.
+
+### What four runs establish
+
+MMLU is **saturated at ~83.5** and did not move for any intervention: 83.5,
+83.1, 83.6, 83.2 across wildly different mixtures, volumes and length
+distributions. v1 already matches its own 35B teacher there (83.0).
+
+TruthfulQA is **below stock for every distil** — 79.0, 76.9, 77.4, 76.6 against
+80.7 — and four different compositions failed to recover it. Consistent with
+§28: the cause is rejection sampling itself, which keeps only confident correct
+answers, not any particular slice.
+
+HumanEval tracks nothing we controlled. v1 is best and no variation improved it.
+
+**Data composition is closed.** Four attempts, four failures, including one
+aimed at a bias that was measured rather than guessed. Anything further on this
+axis should be expected to fail.
+
+### What remains
+
+Offline top-k logit distillation is the only untried change that differs in
+kind. Every run so far trained on **one sampled completion per prompt**; logit
+KD trains against the teacher's full next-token distribution, which the shared
+248,044-token vocabulary makes possible. It needs a custom trainer and roughly
+doubles generation cost, and it is off-policy, which the literature favours for
+knowledge benchmarks.
+
+Failing that, v1 is the result: +5.5 MMLU and +3.0 HumanEval over the model it
+replaces, at the same size and bit width, for a one-time repair of what
+quantization broke.

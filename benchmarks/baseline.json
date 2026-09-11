@@ -200,6 +200,27 @@
         "seconds": 2737.7
       },
       "note": "v3, oMLX 2026-09-09. Abstention slice + v1 code traces. Not released; v1 still best."
+    },
+    "Ornith-1.5-9B-MLX-distil-v4-oQ4": {
+      "mmlu": {
+        "accuracy": 0.832,
+        "correct": 832,
+        "total": 1000,
+        "seconds": 13972.3
+      },
+      "truthfulqa": {
+        "accuracy": 0.766,
+        "correct": 626,
+        "total": 817,
+        "seconds": 12200.4
+      },
+      "humaneval": {
+        "accuracy": 0.896,
+        "correct": 147,
+        "total": 164,
+        "seconds": 2654.8
+      },
+      "note": "v4, oMLX 2026-09-10. Length-unbiased traces, v1 recipe. Not released; v1 still best."
     }
   },
   "targets": {
