@@ -974,3 +974,57 @@ knowledge benchmarks.
 Failing that, v1 is the result: +5.5 MMLU and +3.0 HumanEval over the model it
 replaces, at the same size and bit width, for a one-time repair of what
 quantization broke.
+
+## 37. v5: logit-level distillation
+
+Every run so far minimised cross-entropy against **one sampled completion** per
+prompt. The student saw which token the teacher emitted and nothing about how
+confident it was or what it nearly said. v5 trains against the teacher's
+next-token distribution instead, which the identical 248,044-token vocabulary
+across student and both teachers makes possible.
+
+    L = 0.3 * CE(student, sampled token) + 0.7 * KL(teacher || student)
+
+with the KL over the teacher's top-64, renormalised.
+
+**No regeneration needed.** The traces exist, so teacher-forcing them yields
+every distribution in one forward pass: 1.3 s per 1,000-token sample against
+the ~6 s it took to sample that trace originally. 335 MB of top-k for 1,639
+samples; top-64 captures **99.9%** of the teacher's mass.
+
+**Checks before training**, since a silent misalignment here produces a worse
+model with no error anywhere: teacher rows equal target tokens exactly, the
+actual trace token sits inside the stored top-64 **99.7-99.9%** of the time
+(an off-by-one would collapse this), and KL is a real signal rather than noise
+— mean KL 0.290 against mean CE 0.466, so at alpha=0.3 the KL term contributes
+slightly more than CE.
+
+v5 holds everything else at v1's settings: same 1,639 samples, same slices,
+same 3,200 steps, same rank, layers and learning rate. Only the objective
+changes. (`max_seq_length` went 1024 to 1280 because v1's samples reach 1,034
+tokens under training tokenisation and were being clipped.)
+
+### Two bugs worth recording
+
+Both surfaced as `[metal::malloc] Resource limit (499000) exceeded` around
+iteration 700, and the first fix attempt was wrong.
+
+1. **Dense vocabulary tensors.** The loss built two `[B, T, 248320]` float32
+   arrays per step — about 2.5 GB at T=1280. Rewritten to derive everything
+   from one `[B, T]` log-normaliser plus two gathers, verified **bit-identical**
+   (diff 0.00e+00) to the dense form. Peak memory fell 46.1 to 43.5 GB and it
+   still died, earlier.
+2. **The limit counts live buffers, not bytes.** Which is why reducing memory
+   did not help. Every sample has a distinct length, so every step allocated
+   uniquely-shaped buffers the allocator could not recycle, and this batcher
+   adds two more shapes per step than mlx-lm's — exactly why v1-v4 survived
+   3,200 steps through the same loop. Padded widths are now bucketed to
+   multiples of 128 and the cache is cleared every 10 steps.
+
+A 1,000-iteration probe cleared both failure points before the full run was
+committed to.
+
+**Training:** 3,200 iterations, 1.76M tokens, train loss 0.116, val 0.180,
+peak 44.1 GB, ~110 tokens/s. The val loss is not comparable to earlier runs —
+different objective — and on this project val loss has not predicted benchmark
+outcomes anyway (§32: v2 had the best losses and the worst scores).
