@@ -1,10 +1,11 @@
 # Repairing what quantization broke: five attempts at distilling Ornith-1.5-9B
 
-A complete record of the project — five distilled models, one shipped, one
-upstream PR open with a second branch behind it, one finding worth publishing,
-and a larger pile of wrong hypotheses than right ones.
+A complete record of the project — five distilled models and a sixth stopped
+before training, one shipped, one upstream PR open with a second branch behind
+it, one finding worth publishing, and a larger pile of wrong hypotheses than
+right ones.
 
-Detail for every decision is in [`DECISIONS.md`](DECISIONS.md) (38 sections);
+Detail for every decision is in [`DECISIONS.md`](DECISIONS.md) (40 sections);
 this is the paper-shaped summary. Written for whoever picks this up next,
 including future me.
 
@@ -19,10 +20,11 @@ that it can: **v1 recovers +5.5 MMLU and +3.0 HumanEval over the 4-bit model it
 replaces, at identical size and bit width**, beating the 1.8x larger 8-bit
 build on both and matching its own 35B teacher on MMLU.
 
-Four subsequent attempts to improve on v1 — three data-composition changes and
-one change of training objective — **all failed**, and the last failed worst.
-The negative results are the more useful half of this document, because they
-localise where the remaining headroom is not.
+Five subsequent attempts to improve on v1 — three data-composition changes, one
+change of training objective, and one change of the *filter* — **all failed**,
+and the objective change failed worst. The negative results are the more useful
+half of this document, because they localise where the remaining headroom is
+not.
 
 Along the way the dominant engineering constraint turned out to be a sequential
 loop in a dependency rather than the hardware; removing it yielded **24x memory
@@ -104,6 +106,7 @@ model. That is most of this document.
 | v3 | abstention slice added; v1's code traces restored | 83.6% | 77.4% | 87.2% |
 | v4 | 1024-token length bias removed, all else held | 83.2% | 76.6% | 89.6% |
 | v5 | **objective changed**: CE → CE + KL on teacher top-64 | 77.2% | — | — |
+| v6 | **filter changed**: recover verified abstentions | stopped before training |  |  |
 
 ---
 
@@ -251,7 +254,63 @@ fired on this run, but it would silently poison any run with partial
 extraction. The KL term now carries an explicit coverage mask; verified that an
 uncovered row contributes exactly `0.3 × CE`.
 
-### 5.4 Other things that failed
+### 5.4 v6: the teacher does not have the behaviour we wanted to distill
+
+§5.2 localised the TruthfulQA regression precisely — it lives entirely in
+questions whose correct answer is "I don't know" — and blamed the **filter**:
+rejection sampling keeps only confident correct answers, so the student never
+sees warranted uncertainty. v3 tried to fix that by *adding* 527 SQuAD-v2
+unanswerable items and lost ground; that is reading comprehension ("the passage
+does not say"), not epistemic hedging.
+
+v6 changed the filter instead. When the knowledge teacher answers an open-ended
+question **wrong**, that is by construction a question where confident
+assertion was not warranted — and v1 discarded it. Those 122 prompts went back
+to the teacher with its confidence made explicit, keeping the trace only if it
+then declined, paired with the *original* prompt. MCQ failures were excluded on
+purpose: MMLU does not penalise guessing, so teaching abstention there would
+risk the one metric v1 wins.
+
+**v6 was never trained.** The slice could not support the experiment:
+
+| | count |
+|---|---:|
+| rejected open-ended traces, re-asked | 121 |
+| **teacher answered confidently anyway** | **99 (82%)** |
+| declined — usable hedge samples | 22 |
+| of those, surviving v1's 1,024-token cap | **0** |
+
+§5's threshold was set in advance at ~60 samples. It came in at 22, and at
+**0** after the length cap, because the 22 run 1,295–3,158 tokens (median
+1,900) — the teacher deliberates at length before admitting ignorance, the same
+effect that made "be brief" produce *longer* abstention traces.
+
+**The number that matters is 99, not 22.** On questions it had already answered
+wrong, invited explicitly to say it did not know, Qwen3.6-35B re-asserted a
+confident answer **82% of the time**. The re-ask did not instruct it to decline
+— that would have made the verifier a rubber stamp — it asked for an honest
+confidence judgement and left both outcomes open.
+
+This closes the abstention line for a better reason than v3's failure did.
+**Sequence-level distillation can only transmit what the teacher emits, and
+this teacher does not emit calibrated uncertainty.** §5.2's diagnosis was right
+about the mechanism and wrong to assume the remedy was available: the discarded
+pool is not full of hedges waiting to be recovered, it is full of confident
+errors.
+
+Cost: about an hour of teacher generation, no training. A stopping rule
+satisfied on evidence is cheaper than a sixth null result. The 22 verified
+traces are kept at `runs/v6/teacher/hedge.jsonl`; the supply failed, not the
+method.
+
+*One bug it surfaced:* the first dry run kept 0 of 16 and called them all
+"answered confidently". They were **truncated** — at a 1,024-token budget the
+teacher spent the whole budget inside `<think>` and returned an empty answer,
+and an empty answer is not a confident one. §4's truncation finding,
+reappearing inside our own pipeline. Now uses the teacher's own 2,048 budget
+with escalating retry, and counts no-answer separately.
+
+### 5.5 Other things that failed
 
 **Telling the code teacher to be brief cost 5.4 points of HumanEval.** It
 worked as instructed — median reasoning fell 1,328 → 1,034 characters and the
@@ -391,35 +450,46 @@ the highest-leverage thing in the project, and it was not on the plan.
 
 ## 8. Conclusions, and what is actually left
 
-**Both axes we could control are closed.** Data composition failed four times,
-including once against a bias that was measured rather than guessed. The
-training objective failed once, worse than anything else. The remaining gap to
-the teachers on MMLU — 83.5 against Qwen's 89.3 — is **capacity, not recipe**.
+**Three axes are closed, and one was never opened.** Data composition failed
+four times (§5.1), including once against a bias that was measured rather than
+guessed. The training objective failed once, worse than anything else (§5.3).
+The filter — the one remaining idea with a clean mechanism behind it — turned
+out to have no supply to draw on, because the teacher does not express
+calibrated uncertainty (§5.4).
 
 **v1 is the result**, and it is a good one: a one-time repair of what
 quantization broke, +5.5 MMLU and +3.0 HumanEval at the same size and bit
-width, plus a 15–33% speedup that comes from the same mechanism.
+width, plus a 15–33% speedup from the same mechanism.
 
-If someone continues, in descending order of expected value:
+**What was never varied is the adapter.** Every run — v1 through v6 — used
+rank 32 over the top 16 of 32 layers, chosen once before v1 and never revisited
+while five other things were swept. §5.3 concluded the residual gap is
+"capacity, not recipe", but *adapter* capacity is the one capacity knob the
+project never tested. That asymmetry is the most obvious thing left.
 
-1. **Change the filter, not the mixture.** TruthfulQA's deficit is caused by
-   rejection sampling keeping only confident correct answers (§5.2), and it is
-   the one deficit with a clean mechanism and a clean per-item control. Keeping
-   *verified abstentions* — traces where the teacher declines and declining is
-   correct — attacks the cause rather than adding a slice, which is what v3
-   tried and why v3 failed. This is the only unexplored idea with evidence
-   behind it.
-2. **If logit distillation is retried, fix the termination signal explicitly.**
-   The v5 machinery is built, checked and now bug-fixed; the objective is what
-   failed. Worth trying: a much lower KL weight (α ≥ 0.7 rather than 0.3), or
-   excluding the KL term near end-of-reasoning tokens so the student inherits
-   the teacher's knowledge without its hesitancy about stopping. Report the
-   truncation rate and the wall clock, not just accuracy.
+In descending order of expected value:
+
+1. **Vary the adapter, not the data.** Rank 32 → 64 and top-16 → all 32 layers,
+   holding data, steps and learning rate fixed. Cheap (same pipeline, one
+   config change), directly tests the conclusion five runs have been leaning
+   on, and is the only untouched axis. If capacity is genuinely the limit, this
+   is where it shows; if it changes nothing, "capacity, not recipe" is
+   confirmed properly rather than by elimination.
+2. **Train the domains in sequence rather than mixed.** Also never tried. The
+   40/25/35 mixture assumes the three slices do not interfere, and nothing
+   tested that assumption — TruthfulQA falling below stock in *every* run while
+   MMLU and HumanEval rise is at least consistent with interference.
 3. **Land mlx-lm#1870, then open the fused-solve PR.** The engineering work is
    done and tested; only the review queue stands between it and five model
    families training an order of magnitude cheaper.
-4. **Cut Cross-Entropy** ([arXiv:2411.09009](https://arxiv.org/abs/2411.09009)).
-   A 248,044-token vocabulary costs ~3.8 GB in logits at 2048. The largest
-   remaining implementation-level cost, and it compounds with (2).
-5. **Don't try another data mixture.** Four attempts, four failures. Anything
-   further on this axis should be expected to fail.
+4. **If abstention is revisited, change the teacher, not the filter.** §5.4
+   shows the supply problem is in Qwen3.6-35B itself. A teacher that actually
+   hedges — or a non-distillation method such as calibration tuning on the
+   student's own logits — is the only route that could work.
+5. **Don't try another data mixture, and don't retry logit KD unchanged.** Four
+   and one failures respectively. If logit KD is retried, fix the termination
+   signal first (lower KL weight, or exclude the KL term near end-of-reasoning
+   tokens) and report truncation rate and wall clock, not just accuracy.
+6. **Cut Cross-Entropy** ([arXiv:2411.09009](https://arxiv.org/abs/2411.09009)).
+   A 248,044-token vocabulary costs ~3.8 GB in logits at 2048 — the largest
+   remaining implementation-level cost.

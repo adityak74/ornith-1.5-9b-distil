@@ -1165,3 +1165,79 @@ nothing** — that is a real possible outcome of this design, not a get-out.
 Falsifier: if MMLU drops more than a point, abstention is leaking into multiple
 choice despite the exclusion, and the filter change is not separable from the
 guessing incentive.
+
+## 40. v6 stopped before training: abstention cannot be distilled from this teacher
+
+v6 was never trained. The hedge stage ran to completion and the slice it
+produced cannot support the experiment §39 described.
+
+| stage | count |
+|---|---:|
+| open-ended traces the verifier rejected | 122 |
+| re-asked with confidence made explicit | 121 |
+| **teacher answered confidently anyway** | **99** |
+| produced no answer within budget | 1 |
+| **declined — usable hedge samples** | **22** |
+| of those, surviving v1's 1,024-token cap | **0** |
+
+§39 set the threshold in advance: "if the hedge slice survives verification at
+under ~60 samples, any result is inside the noise band and the run answers
+nothing." It came in at 22 before the length cap and **0 after it**. Training
+v6 would have trained on v1's data exactly.
+
+### The interesting number is 99, not 22
+
+**On questions it had already answered wrong, invited explicitly to say it did
+not know, Qwen3.6-35B re-asserted a confident answer 99 times out of 121 —
+82%.** The re-ask did not instruct it to decline (that would have made the
+verifier a rubber stamp); it asked for an honest confidence judgement and left
+both outcomes open. Four times in five, the judgement was "I know this", and
+it was wrong.
+
+This closes the abstention line for a better reason than v3's failure did.
+**The teacher does not have the behaviour we were trying to distill.** No
+filter change, mixture, or re-prompt can extract calibrated uncertainty from a
+model that does not express it — and sequence-level distillation can only
+transmit what the teacher actually emits. §28's diagnosis was right about the
+mechanism (rejection sampling keeps only confident answers) and wrong about the
+remedy being available at all: the discarded pool is not full of hedges waiting
+to be recovered, it is full of confident errors.
+
+### A second reason it would not have worked
+
+The 22 usable traces run **1,295 to 3,158 tokens, median 1,900**. None fit
+v1's 1,024-token cap; 14 fit 2,048. The teacher deliberates *at length* before
+admitting ignorance — consistent with §31, where asking for shorter abstention
+traces produced longer ones. So even the 22 could only be used by also raising
+the length cap, which moves a second variable and re-opens the confound v4 was
+built to avoid.
+
+### What this run cost and what it is worth
+
+About an hour of teacher generation, no training. It produced a stopping rule
+satisfied on the evidence rather than a sixth null result, which is the cheaper
+way to close a hypothesis.
+
+**Recorded for whoever revisits this:** the 22 verified hedge traces are kept
+at `runs/v6/teacher/hedge.jsonl`. They are real and correctly built. The
+supply, not the method, is what failed.
+
+### One bug this run did surface
+
+The first dry run kept 0 of 16 and reported all 16 as "answered confidently".
+They were **truncated** — at a 1,024-token budget the teacher spent the whole
+budget inside `<think>` and returned an empty answer, and an empty answer is
+not a confident one. Fixed to use the teacher's own 2,048 budget with the same
+1.5x escalating retry the teach stage uses, and to count no-answer separately.
+Had this gone unnoticed the run would have reported a yield of zero for
+entirely the wrong reason — §31's truncation finding, reappearing inside our
+own pipeline.
+
+### Where the remaining headroom actually is
+
+Five runs varied **data** (v1-v4) and **objective** (v5). None varied the
+**adapter**. Every run used rank 32 over the top 16 of 32 layers, chosen once
+before v1 and never revisited. §38 concluded the residual gap is "capacity, not
+recipe" — but adapter capacity is the one capacity knob the project never
+tested. That is the next thing to try, and it is cheap: same data, same
+pipeline, one config change.
