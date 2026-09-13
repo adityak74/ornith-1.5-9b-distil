@@ -31,12 +31,14 @@ from ..logits import load_teacher_logits
 BUCKET = 128
 
 
-def distill_loss(model, tokens, lengths, teacher_ids, teacher_logprobs, alpha: float = 0.3):
+def distill_loss(model, tokens, lengths, teacher_ids, teacher_logprobs, has_teacher,
+                 alpha: float = 0.3):
     """Cross-entropy against the sampled token, plus KL against the teacher.
 
     `tokens` is [B, T+1]; `lengths` holds (prompt_end, sequence_end) per row, as
     mlx-lm's own loss expects. `teacher_ids` and `teacher_logprobs` are
-    [B, T, K], zero-padded outside the target span.
+    [B, T, K], zero-padded outside the target span, and `has_teacher` is [B, T]
+    marking where that padding is real data.
     """
     inputs, targets = tokens[:, :-1], tokens[:, 1:]
     logits = model(inputs)
@@ -62,14 +64,18 @@ def distill_loss(model, tokens, lengths, teacher_ids, teacher_logprobs, alpha: f
     t_logprobs = t_logprobs - mx.logsumexp(t_logprobs, axis=-1, keepdims=True)
     t_probs = mx.exp(t_logprobs)
 
+    # Positions with no teacher row carry the -30 fill, which renormalises to
+    # certainty on token id 0; they must be excluded rather than left to the
+    # target-span mask, which does not know about them.
+    kl_mask = mask * has_teacher
     kl = (t_probs * (t_logprobs - student_k)).sum(axis=-1)
-    kl = (kl * mask).sum() / n_tokens
+    kl = (kl * kl_mask).sum() / mx.maximum(kl_mask.sum(), 1)
 
     return alpha * ce + (1 - alpha) * kl, n_tokens
 
 
 def make_batches(dataset, teacher, tok, batch_size: int, max_seq_length: int, loop: bool, k: int):
-    """Yield (tokens, lengths, teacher_ids, teacher_logprobs).
+    """Yield (tokens, lengths, teacher_ids, teacher_logprobs, has_teacher).
 
     Mirrors mlx-lm's `iterate_batches` but carries the teacher's top-k, aligned
     to the target span and zero-padded elsewhere.
@@ -99,6 +105,7 @@ def make_batches(dataset, teacher, tok, batch_size: int, max_seq_length: int, lo
             batch = np.zeros((len(seqs), width), np.int32)
             ids = np.zeros((len(seqs), width - 1, k), np.int32)
             lps = np.full((len(seqs), width - 1, k), -30.0, np.float32)
+            cov = np.zeros((len(seqs), width - 1), np.float32)
             for b, (seq, (p_len, end)) in enumerate(zip(seqs, spans)):
                 batch[b, : len(seq)] = seq[:width]
                 if tk_ids[b] is None:
@@ -108,11 +115,13 @@ def make_batches(dataset, teacher, tok, batch_size: int, max_seq_length: int, lo
                     lo = p_len - 1
                     ids[b, lo : lo + n] = np.array(tk_ids[b][:n])
                     lps[b, lo : lo + n] = np.array(tk_lps[b][:n], dtype=np.float32)
+                    cov[b, lo : lo + n] = 1.0
             yield (
                 mx.array(batch),
                 mx.array([[p, e] for p, e in spans]),
                 mx.array(ids),
                 mx.array(lps),
+                mx.array(cov),
             )
         if not loop:
             break
@@ -171,7 +180,8 @@ def train(cfg: Config, alpha: float = 0.3, top_k: int = 64) -> Path:
     print(f"teacher logits: {len(teacher_train)} train, {len(teacher_valid)} valid samples")
     missing = len(train_set) - len(teacher_train)
     if missing:
-        print(f"  note: {missing} samples have no teacher logits; they train on CE alone")
+        print(f"  note: {missing} samples have no teacher logits; the KL term is "
+              f"masked off for them and they train on CE alone")
 
     adapter_dir = cfg.path("adapters")
     adapter_dir.mkdir(parents=True, exist_ok=True)
@@ -261,12 +271,12 @@ def sanity_check(cfg: Config, alpha: float = 0.3, top_k: int = 64) -> None:
     ds = _Dataset(cfg.path("train", "train.jsonl"), tok)
     teacher = load_teacher_logits(cfg, "train")
     gen = make_batches(ds, teacher, tok, 1, cfg.distill["train"]["max_seq_length"], False, top_k)
-    tokens, lengths, ids, lps = next(gen)
+    tokens, lengths, ids, lps, cov = next(gen)
     print(f"tokens {tokens.shape} | lengths {lengths.tolist()} | topk {ids.shape}")
     covered = int((lps[0, :, 0] > -30).sum())
     print(f"positions with teacher logits: {covered} of {int(lengths[0, 1] - lengths[0, 0])} target")
     model, _ = load(cfg.student_base())
-    loss, n = distill_loss(model, tokens, lengths, ids, lps, alpha=alpha)
+    loss, n = distill_loss(model, tokens, lengths, ids, lps, cov, alpha=alpha)
     mx.eval(loss, n)
     print(f"loss {float(loss):.4f} over {int(n)} tokens")
     math.isfinite(float(loss)) or print("  WARNING: loss is not finite")

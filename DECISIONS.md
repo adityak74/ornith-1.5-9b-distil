@@ -1028,3 +1028,76 @@ committed to.
 peak 44.1 GB, ~110 tokens/s. The val loss is not comparable to earlier runs —
 different objective — and on this project val loss has not predicted benchmark
 outcomes anyway (§32: v2 had the best losses and the worst scores).
+
+## 38. v5 result: logit distillation is worse than stock. Method is closed too.
+
+| run | MMLU | seconds | tokens/question |
+|---|---:|---:|---:|
+| stock oQ4 | 78.0% | 15,262 | — |
+| **v1 (shipped)** | **83.5%** | **13,007** | — |
+| v5 | **77.2%** | **69,897** | — |
+
+v5 is the first distil to score **below the stock model it was meant to
+improve**, and the run was abandoned after MMLU — TruthfulQA and HumanEval were
+never measured, because the wall clock made the remaining two benchmarks a
+multi-day proposition for a model already known to have failed.
+
+**The wall clock is the finding, not the accuracy.** 69,897 s against v1's
+13,007 s on the same 1,000 questions — 5.4x — at the same size, bit width and
+decode settings. v5 did not become confused; it became unable to stop. Under a
+2,048-token budget, that converts directly into wrong answers through
+truncation, which is the same termination axis as §31's published finding,
+driven in the wrong direction by the objective.
+
+The mechanism is consistent with what the objective actually asks for. CE
+trains the student toward the single token the teacher committed to. KL trains
+it to reproduce the teacher's *entire* distribution at every step — including
+the teacher's residual uncertainty about whether to stop reasoning. A 35B
+teacher can carry that uncertainty and still terminate; a 9B student at 4.7
+bits apparently cannot.
+
+### The result is real, not a bug
+
+A worse model from a silent misalignment looks identical to a worse model from
+a bad objective, so three failure modes were checked before accepting it.
+
+1. **Vocabulary identity across teachers.** `logits.py` tokenises with the
+   *student's* tokenizer and feeds those ids to whichever teacher owns the
+   domain, which is only valid if the vocabularies are index-identical. §37
+   verified this for the two Ornith models; the knowledge teacher is
+   **Qwen3.6**, which was never checked. Its `tokenizer.json` **does** differ —
+   different hash, 18 bytes larger. The vocabularies are nonetheless
+   index-identical (248,044 entries, `vocab` and `merges` both equal); the
+   difference is the pre-tokenizer regex, which includes `\p{M}` in the letter
+   class. That affects how *text* encodes, never what an id means, so stored
+   teacher logits are valid in student space.
+2. **Top-64 coverage.** §37 asserted 99.9% from the literature rather than from
+   these shards. Measured across all 898,322 stored positions: **99.93%**
+   (knowledge) and **99.96%** (code); 0.2% of knowledge positions fall below
+   0.95 and none below 0.5. Renormalising moves mean top-1 probability from
+   0.8849 to 0.8853. The truncated target is faithful.
+3. **Span alignment and coverage.** 1,639/1,639 train and 33/33 valid samples
+   carry teacher rows, with **zero** target positions uncovered.
+
+The objective was implemented correctly and faithfully, and it made the model
+worse. That is a result.
+
+### A latent bug found while checking, fixed
+
+`make_batches` fills rows that have no teacher logits with `ids = 0` and
+`lps = -30.0`, and those positions **remain inside the loss mask**. A uniform
+`-30` renormalises to a uniform distribution over 64 copies of token id 0 —
+i.e. certainty on token 0 — so such rows would train toward garbage, not
+"CE alone" as the adjacent print statement claimed. Coverage was complete on
+this run so it never fired, but it would silently poison any run whose
+extraction was partial. Fixed by masking out uncovered positions explicitly.
+
+### What five runs establish
+
+Data composition is closed (§36). **Method is now closed too.** The remaining
+gap to the 35B teachers on MMLU — 83.5 against Qwen's 89.3 — is capacity, not
+recipe. Four mixtures and one objective failed to improve on v1; the one that
+differed in kind failed worst.
+
+**v1 is the result.** +5.5 MMLU and +3.0 HumanEval over the 4-bit model it
+replaces, at identical size and bit width.
