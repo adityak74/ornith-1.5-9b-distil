@@ -1298,3 +1298,29 @@ measurement. A positive result would reopen the whole project.
 Falsifier: if MMLU moves more than a point in either direction, adapter
 capacity was a live variable all along and every earlier null result was
 measured at the wrong operating point.
+
+### v7 training
+
+3,200 iterations, 1,755,081 tokens, train loss 0.116, **val loss 0.326**, peak
+42.5 GB, ~119 tok/s, ~4 hours. Fused, quantized to oQ4 at **4.721 bits with
+120/120 promoted modules** (identical to v1's map), installed as
+`Ornith-1.5-9B-MLX-distil-v7-oQ4`.
+
+Validation trajectory: 0.723, 0.421, 0.381, 0.387, 0.378, 0.343, 0.398, 0.347,
+**0.326**. The bump at iteration 2,400 (val 0.398 while train fell to 0.087)
+looked like the overfitting a doubled adapter on a fixed 1,639-sample set would
+predict, and it was not: val recovered to 0.347 and finished at its best. Read
+as fluctuation, not a trend.
+
+**Loss comparison across runs, with the caveat that it has never predicted a
+benchmark here** (§32: v2 had the best losses and the worst scores):
+
+| run | adapter | train | val |
+|---|---|---:|---:|
+| v2 | rank 32 / top 16 | 0.116 | 0.267 |
+| v4 | rank 32 / top 16 | 0.119 | 0.305 |
+| **v7** | **rank 64 / top 16** | **0.116** | **0.326** |
+
+v7's val loss is comparable to v2's and v4's — same objective, same metric —
+and is *worse* than both. On this project that means approximately nothing.
+The benchmark is the measurement.
