@@ -52,6 +52,13 @@ def _verify(rec: dict, dcfg: dict) -> tuple[bool, str]:
                       "not mention", "not contain", "cannot be determined", "unanswerable")
         )
         return declines, "abstain"
+    if kind == "hedge":
+        # Verified when written (pipeline/hedge.py only keeps traces where the
+        # teacher declined *and* its confident answer had already been proven
+        # wrong against gold). Re-checking here would need the inverted gold.
+        from .hedge import declines
+
+        return declines(answer), "hedge"
     if kind == "tf" and dcfg["verify_mcq"]:
         from ..textnorm import final_answer
 

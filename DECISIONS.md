@@ -1101,3 +1101,67 @@ differed in kind failed worst.
 
 **v1 is the result.** +5.5 MMLU and +3.0 HumanEval over the 4-bit model it
 replaces, at identical size and bit width.
+
+## 39. v6: change the filter, not the mixture
+
+§36 closed data composition and §38 closed the objective. What neither touched
+is the **filter**. Rejection sampling keeps only confident correct answers, and
+§28's per-item control shows exactly what that costs: v1 matches the stock
+model on ordinary TruthfulQA questions (81.3% vs 81.4%) and loses 11 points on
+questions whose correct answer is "I don't know" (65.0% vs 76.1%, p ~ 0.016).
+It is the one deficit on this project with a clean mechanism *and* a clean
+control.
+
+v3 already tried the obvious fix and failed: 527 SQuAD-v2 unanswerable items
+added as a slice, TruthfulQA down 1.6 points. The likely reason is that it is a
+different skill — "the passage does not say" is reading comprehension, while
+TruthfulQA hedging is "no good evidence supports this". Adding out-of-domain
+abstention data did not transfer, and adding *anything* has now failed four
+times.
+
+v6 changes the filter instead. When the knowledge teacher answers an open-ended
+question **wrong**, that is by construction a question on which confident
+assertion was not warranted — and v1 threw it away. Those prompts go back to
+the teacher with its confidence made explicit, and the trace is kept only if it
+then declines. The pool is **122 rejected open-ended traces** out of 600.
+
+### Three deliberate constraints
+
+**The target is generated and verified, never fabricated.** The re-ask asks for
+a confidence judgement and leaves both outcomes open — it does not instruct the
+teacher to decline, which would make the verifier a rubber stamp. A re-ask that
+answers confidently is dropped like any other trace that fails its verifier.
+This is rejection sampling with the gold inverted.
+
+**Training pairs the abstention with the ORIGINAL prompt**, not the calibration
+prompt. The student has to learn to hedge when asked normally, not only when
+asked about its confidence.
+
+**MCQ failures are excluded on purpose.** 135 exist and are tempting. MMLU
+imposes no penalty for guessing, so teaching abstention on multiple choice
+would risk the one metric v1 wins (83.5%, matching its own 35B teacher) to
+chase the one it loses. Open-ended only.
+
+### Held constant
+
+Same sources and counts, same 40/25/35 mixture, same 3,200 steps, rank 32, top
+16 layers, lr 3e-5, 1024-token cap. `max_samples: 1672` pins the total to v1's
+exact count, so recovered abstentions **displace** confident truthfulness
+samples rather than adding volume — volume has failed twice (§32), and v4's
+null result is only worth anything because it moved one variable. v6 reuses
+v1's teacher traces unchanged, so the hedge slice is the only difference.
+
+### Prediction, on the record before measuring
+
+**TruthfulQA improves and MMLU does not move.** Specifically: TruthfulQA 80-81%
+(from 79.0%, recovering most of the 1.7-point gap to stock), MMLU within noise
+of 83.5%, HumanEval within noise of 90.8% since the code slice is untouched.
+
+The honest odds: the ceiling here is ~1.7 points, the slice is small, and five
+runs have failed to beat v1. **If the hedge slice survives verification at
+under ~60 samples, any result is inside the noise band and the run answers
+nothing** — that is a real possible outcome of this design, not a get-out.
+
+Falsifier: if MMLU drops more than a point, abstention is leaking into multiple
+choice despite the exclusion, and the filter change is not separable from the
+guessing incentive.

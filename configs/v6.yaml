@@ -1,0 +1,124 @@
+# v6 -- change the FILTER, not the mixture.
+# Stage order: prompts -> teach -> hedge -> dataset -> train -> fuse -> quantize -> eval
+#
+# This is v1's config with exactly one variable moved. v1 keeps only confident
+# correct answers, which is why it matches stock on ordinary TruthfulQA
+# questions (81.3 vs 81.4) and loses 11 points on ones where "I don't know" is
+# correct (65.0 vs 76.1, p ~ 0.016). v3 tried to fix that by ADDING a slice of
+# 527 SQuAD-v2 unanswerables and lost 1.6 points -- different skill, no
+# transfer. Here the discarded pool is recovered instead: open-ended prompts
+# the teacher got WRONG are re-asked with its confidence made explicit, and the
+# trace is kept only if it then declines (see pipeline/hedge.py).
+#
+# Everything else is held at v1: same sources, same n, same mixture, same
+# 3,200 steps, rank, layers, learning rate and length cap. max_samples pins the
+# total so hedges DISPLACE confident samples rather than adding volume --
+# volume has failed twice (DECISIONS.md 32) and v4's null result is only worth
+# something because it moved one variable.
+
+seed: 17
+out_dir: runs/v6
+
+prompts:
+  # Source pools. Everything here must be disjoint from the eval sets;
+  # `dataset` re-checks with n-gram decontamination against MMLU test /
+  # TruthfulQA / HumanEval before writing the training files.
+  knowledge:
+    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 1500, kind: mcq}
+    - {hf: allenai/ai2_arc, config: ARC-Challenge, split: train, n: 300, kind: mcq}
+    - {hf: allenai/openbookqa, config: main, split: train, n: 200, kind: mcq}
+  truthfulness:
+    # TruthfulQA itself is eval-only (817 items, no train split) -- never sampled.
+    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 600, kind: qa}
+    - {hf: allenai/sciq, config: default, split: train, n: 400, kind: mcq}
+  code:
+    # Every MBPP split is fair game: our code eval is HumanEval, so MBPP test is
+    # training data, not eval data, and all of it ships with executable tests.
+    # CodeFeedback was dropped after measurement -- 24% of its traces were usable
+    # against MBPP's 74%, and none of them verifiable. See DECISIONS.md 6.
+    - {hf: google-research-datasets/mbpp, config: full, split: train, n: 374, kind: code}
+    - {hf: google-research-datasets/mbpp, config: full, split: test, n: 500, kind: code}
+    - {hf: google-research-datasets/mbpp, config: full, split: validation, n: 90, kind: code}
+    - {hf: google-research-datasets/mbpp, config: full, split: prompt, n: 10, kind: code}
+
+teach:
+  batch_size: 16         # mlx batched generation
+  think: true            # keep teacher reasoning traces in the target
+  keep_think_in_target: true
+  max_retries: 2
+
+hedge:
+  # Same budget the teach stage uses. A shorter one looked reasonable -- the
+  # judgement is "do I actually know this", not a chain of reasoning -- but at
+  # 1024 the teacher spent the whole budget inside <think> and returned an
+  # empty answer, which the verifier read as "answered confidently" and threw
+  # every sample away. Truncation masquerading as a result is the same failure
+  # DECISIONS.md 31 documents in the benchmarks.
+  max_tokens: 2048
+
+dataset:
+  # Rejection sampling: only keep samples whose answer is verifiably right --
+  # plus the verified abstentions recovered by `odistil hedge`.
+  verify_mcq: true       # teacher letter must match gold
+  verify_code: true      # generated code must pass the dataset's own tests
+  verify_qa: true        # normalized-substring match against gold aliases
+  decontaminate_ngram: 13
+  max_seq_len: 1024      # keeps 50% of traces with reasoning intact (98% without)
+  valid_frac: 0.02
+  max_samples: 1672      # v1's exact count, so the hedge slice displaces
+                         # confident samples instead of adding data
+  mix:                   # target proportions of the final training set
+    knowledge: 0.40
+    truthfulness: 0.25
+    code: 0.35
+
+train:
+  # Full FT of a 9B in bf16 needs ~110 GB with AdamW; on a 64 GB M4 Pro we
+  # train high-rank LoRA over the bf16 base instead, then fuse.
+  fine_tune_type: lora
+  num_layers: 16          # half the stack; backprop stops there
+  rank: 32
+  scale: 16.0
+  dropout: 0.05
+  batch_size: 1           # memory scales ~20 MB/token; batch 2 does not fit
+  grad_accumulation_steps: 1   # 4 kept four backward graphs alive and hit
+                               # Metal's 499000 live-resource limit
+  iters: 3200            # 1 sample/iter, ~2 epochs over 1639 samples
+  learning_rate: 3.0e-5   # lowered with the effective batch (4 -> 1)
+  lr_schedule: cosine_decay
+  warmup: 150
+  max_seq_length: 1024    # 47.8 GB peak; save_every guards against an OOM restart
+  grad_checkpoint: true
+  clear_cache_threshold: 8
+  steps_per_eval: 400
+  save_every: 400
+  mask_prompt: true
+
+quantize:
+  # mlx-lm baseline quants for A/B against the oQ series.
+  variants:
+    - {name: q8, bits: 8, group_size: 64}
+    - {name: q4, bits: 4, group_size: 64}
+  # `--variant oq4|oq3|oq2` reproduces the mixed-bit map read straight out of
+  # the corresponding checkpoint in models.yaml (oQ4 = 4-bit affine g64 with 120
+  # modules promoted to 5/6/8 bits). oq8 is uniform 8-bit, so use --variant q8.
+  # Set a command template here ({src}/{dst} substituted) to override with an
+  # external quantizer instead.
+  recipes:
+    oq4: null
+    oq3: null
+    oq2: null
+
+eval:
+  benchmarks: [mmlu, truthfulqa, humaneval]
+  mmlu_sample: 1000       # same 1000-item sample as the baseline table
+  think: true
+  # Per-benchmark budgets. At 2048 the bf16 student truncated 19/164 HumanEval
+  # items mid-reasoning -- every one scored wrong, which measures the budget,
+  # not the model. The runner reports the truncation count; if it is not ~0,
+  # raise the budget rather than reading the score.
+  max_tokens:
+    default: 2048
+    mmlu: 3072
+    humaneval: 4096
+  temp: 0.0

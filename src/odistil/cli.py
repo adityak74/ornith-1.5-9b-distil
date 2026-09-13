@@ -4,6 +4,7 @@
     odistil status                     progress of every stage
     odistil prompts [--domain code]    stage 1: build the prompt pool
     odistil teach   [--teacher code]   stage 2: generate teacher traces
+    odistil hedge                      stage 2b: recover verified abstentions
     odistil dataset                    stage 3: verify + decontaminate + mix
     odistil train   [--resume]         stage 4: LoRA distillation
     odistil fuse                       stage 5: fuse adapters -> bf16 checkpoint
@@ -48,6 +49,13 @@ def cmd_teach(args) -> int:
     from .pipeline.teach import run
 
     run(_cfg(args), teachers=args.teacher, limit=args.limit)
+    return 0
+
+
+def cmd_hedge(args) -> int:
+    from .pipeline.hedge import run
+
+    run(_cfg(args), limit=args.limit)
     return 0
 
 
@@ -150,6 +158,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--teacher", action="append", help="knowledge | code (repeatable)")
     s.add_argument("--limit", type=int)
     s.set_defaults(fn=cmd_teach)
+
+    s = sub.add_parser("hedge", help="stage 2b: re-ask rejected open-ended traces")
+    s.add_argument("--limit", type=int, help="first N rejected traces (debugging)")
+    s.set_defaults(fn=cmd_hedge)
 
     s = sub.add_parser("dataset", help="stage 3: verify, decontaminate, mix")
     s.add_argument("--skip-decontam", action="store_true", help="smoke tests only")
