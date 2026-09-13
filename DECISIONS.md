@@ -1241,3 +1241,60 @@ before v1 and never revisited. §38 concluded the residual gap is "capacity, not
 recipe" — but adapter capacity is the one capacity knob the project never
 tested. That is the next thing to try, and it is cheap: same data, same
 pipeline, one config change.
+
+## 41. v7: vary the adapter -- the axis six runs never touched
+
+v1 through v6 swept data composition four times and the training objective
+once. Every one of them used **rank 32 over the top 16 of 32 layers**, chosen
+once before v1 and never revisited. §38 concluded the residual gap to the 35B
+teachers is "capacity, not recipe" -- but *adapter* capacity is the one
+capacity knob nothing measured. v7 tests that conclusion instead of leaning
+on it.
+
+Data is v1's, **byte-identical** (`runs/v7/train` is copied from `runs/v1/train`,
+sha256 verified), so prompts/teach/dataset are not re-run and cannot drift.
+Steps, learning rate, schedule, batch size and length cap are held at v1.
+
+### What fits on 64 GB
+
+| variant | trainable | peak mem | tok/s |
+|---|---:|---:|---:|
+| v1 (rank 32, top 16) | 43.3M | 47.8 GB | 55 |
+| **rank 64, top 16** | **86.557M** | **41.9 GB** | **110** |
+| rank 32, all 32 | 86.557M | 55.8 GB | 71 |
+| rank 64, all 32 | 173.1M | **OOM** | -- |
+
+Rank 64 across the full stack was the intended experiment and does not fit:
+**backprop depth, not rank, is what costs**, since adapting the whole stack
+roughly doubles activation memory against v1's top half.
+
+The two survivors are the same size to three decimal places -- rank 32 x 32
+layers and rank 64 x 16 layers are both 86.557M -- so they are the same
+capacity increase differently allocated, wide over half the stack versus narrow
+over all of it. A clean pair, if both are worth running.
+
+**Rank 64 / top 16 runs first**: 41.9 GB against 55.8 leaves real headroom (the
+peak above is over 20 iterations and the longest samples may not have appeared
+yet; an OOM four hours into an eight-hour run is the expensive failure mode),
+and at 110 tok/s it finishes in roughly half the time. Depth is the follow-up
+if capacity turns out to matter at all.
+
+One deliberate exception to holding v1 constant: `gdn_chunk: 64` is on, which
+v1 predates. It changes speed and memory, not results -- verified to ~3e-7
+against the sequential reference (§33) -- and it is what makes 41.9 GB possible.
+
+### Prediction, on the record before measuring
+
+**Nothing moves.** MMLU within noise of 83.5%, TruthfulQA within noise of
+79.0%, HumanEval within noise of 90.8%. Six runs have failed to beat v1, MMLU
+has not moved for any intervention, and doubling adapter capacity on identical
+data is a weaker intervention than several that already failed.
+
+The reason to run it anyway is that "capacity, not recipe" is a conclusion five
+runs have leaned on and none tested, and it is cheap -- no teacher generation,
+one config change, ~4 hours. A null result converts an assumption into a
+measurement. A positive result would reopen the whole project.
+
+Falsifier: if MMLU moves more than a point in either direction, adapter
+capacity was a live variable all along and every earlier null result was
+measured at the wrong operating point.
