@@ -27,3 +27,63 @@ def test_hedge_question_recovered_from_qa_template():
     q = "Who wrote Bleak House?"
     rec = {"prompt": QA_TMPL.format(question=q)}
     assert _question_of(rec) == q
+
+
+def test_kodcode_normaliser_builds_runnable_tests():
+    from odistil.pipeline.prompts import _normalize
+
+    row = {
+        "question": "Return the sum of a list.",
+        "test": "from solution import total\n\ndef test_a():\n    assert total([1, 2]) == 3\n\ndef test_b():\n    assert total([]) == 0\n",
+        "filter_reason": "",
+        "benchmark_similarity": 0.5,
+    }
+    src = {"hf": "KodCode/KodCode-V1", "split": "train", "kind": "code", "_domain": "code"}
+    rec = _normalize(src, row, 7)
+    assert rec is not None
+    assert "from solution import" not in rec["prompt"]
+    assert rec["gold"]["tests"][1] == "test_a()\ntest_b()"
+
+    from odistil.codeexec import check_with_tests
+
+    ok, _ = check_with_tests("```python\ndef total(xs): return sum(xs)\n```", "", rec["gold"]["tests"])
+    assert ok
+    bad, _ = check_with_tests("```python\ndef total(xs): return 0\n```", "", rec["gold"]["tests"])
+    assert not bad
+
+
+def test_kodcode_normaliser_skips_flagged_and_near_benchmark_rows():
+    from odistil.pipeline.prompts import _normalize
+
+    src = {"hf": "KodCode/KodCode-V1", "split": "train", "kind": "code", "_domain": "code"}
+    base = {"question": "q", "test": "def test_x():\n    assert True\n", "filter_reason": "", "benchmark_similarity": 0.5}
+    assert _normalize(src, {**base, "filter_reason": "dup"}, 1) is None
+    assert _normalize(src, {**base, "benchmark_similarity": 0.97}, 2) is None
+    assert _normalize(src, base, 3) is not None
+
+
+def test_rollout_triage_splits_failures_and_same_size_control(tmp_path):
+    import json
+
+    from odistil.config import Config
+    from odistil.pipeline.rollout import triage
+
+    pool = tmp_path / "pool.jsonl"
+    with pool.open("w") as f:
+        for i in range(10):
+            f.write(json.dumps({"id": f"p{i}", "domain": "knowledge", "kind": "mcq", "prompt": "x", "gold": "A"}) + "\n")
+    out = tmp_path / "run"
+    out.mkdir()
+    with (out / "rollouts.jsonl").open("w") as f:
+        for i in range(10):
+            f.write(json.dumps({"id": f"p{i}", "domain": "knowledge", "kind": "mcq",
+                                "correct": i % 3 != 0, "truncated": False, "tokens": 1, "why": ""}) + "\n")
+    cfg = Config.load(None, "configs/v8.yaml")
+    cfg.distill["rollout"]["pool"] = str(pool)
+    cfg.distill["rollout"]["control_dir"] = str(tmp_path / "ctl")
+    cfg.distill["out_dir"] = str(out)
+    triage(cfg)
+    failures = [json.loads(line)["id"] for line in (out / "prompts.jsonl").open()]
+    control = [json.loads(line)["id"] for line in (tmp_path / "ctl" / "prompts.jsonl").open()]
+    assert failures == ["p0", "p3", "p6", "p9"]
+    assert len(control) == len(failures)

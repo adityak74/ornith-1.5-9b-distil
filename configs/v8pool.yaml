@@ -1,0 +1,33 @@
+# v8 pool -- a FRESH prompt pool for student rollouts. Nothing here is trained
+# on directly; `odistil rollout` under configs/v8.yaml reads it, runs v1 over
+# it, and keeps the failures.
+#
+# Disjoint from v1 by construction: a different sampling seed, plus every id in
+# v1's prompts.jsonl explicitly excluded. Code comes from KodCode-V1 because
+# MBPP is fully consumed -- all 974 items across every split went into v1.
+
+seed: 8
+out_dir: runs/v8pool
+exclude_prompts:
+  - runs/v1/prompts.jsonl
+
+prompts:
+  knowledge:
+    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 2000, kind: mcq}
+    - {hf: allenai/ai2_arc, config: ARC-Challenge, split: train, n: 300, kind: mcq}
+    - {hf: allenai/openbookqa, config: main, split: train, n: 200, kind: mcq}
+  truthfulness:
+    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 800, kind: qa}
+    - {hf: allenai/sciq, config: default, split: train, n: 400, kind: mcq}
+  code:
+    - {hf: KodCode/KodCode-V1, split: train, n: 1300, kind: code}
+
+# the remaining sections are unused by the prompts stage but Config requires them
+teach: {batch_size: 16, think: true, keep_think_in_target: true, max_retries: 2}
+dataset: {verify_mcq: true, verify_code: true, verify_qa: true, decontaminate_ngram: 13,
+          max_seq_len: 2048, valid_frac: 0.02, mix: {knowledge: 0.4, truthfulness: 0.25, code: 0.35}}
+train: {fine_tune_type: lora, num_layers: 16, rank: 32, scale: 16.0, dropout: 0.05, batch_size: 1,
+        iters: 1, learning_rate: 3.0e-5, lr_schedule: cosine_decay, warmup: 0, max_seq_length: 2048,
+        grad_checkpoint: true, steps_per_eval: 1, save_every: 1, mask_prompt: true}
+quantize: {variants: [], recipes: {oq4: null}}
+eval: {benchmarks: [], mmlu_sample: 1000, think: true, max_tokens: {default: 2048}, temp: 0.0}

@@ -4,6 +4,7 @@
     odistil status                     progress of every stage
     odistil prompts [--domain code]    stage 1: build the prompt pool
     odistil teach   [--teacher code]   stage 2: generate teacher traces
+    odistil rollout                    stage 1b: roll the student out, keep its failures
     odistil hedge                      stage 2b: recover verified abstentions
     odistil dataset                    stage 3: verify + decontaminate + mix
     odistil train   [--resume]         stage 4: LoRA distillation
@@ -49,6 +50,16 @@ def cmd_teach(args) -> int:
     from .pipeline.teach import run
 
     run(_cfg(args), teachers=args.teacher, limit=args.limit)
+    return 0
+
+
+def cmd_rollout(args) -> int:
+    from .pipeline.rollout import run, triage
+
+    if args.triage_only:
+        triage(_cfg(args))
+    else:
+        run(_cfg(args), limit=args.limit)
     return 0
 
 
@@ -158,6 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--teacher", action="append", help="knowledge | code (repeatable)")
     s.add_argument("--limit", type=int)
     s.set_defaults(fn=cmd_teach)
+
+    s = sub.add_parser("rollout", help="stage 1b: roll the student out over a fresh pool")
+    s.add_argument("--limit", type=int, help="first N pool prompts (debugging)")
+    s.add_argument("--triage-only", action="store_true",
+                   help="re-split arms from existing rollouts without generating")
+    s.set_defaults(fn=cmd_rollout)
 
     s = sub.add_parser("hedge", help="stage 2b: re-ask rejected open-ended traces")
     s.add_argument("--limit", type=int, help="first N rejected traces (debugging)")

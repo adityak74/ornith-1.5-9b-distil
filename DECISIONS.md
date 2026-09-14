@@ -1394,3 +1394,86 @@ cover data composition (4), training objective (1), filter (1, stopped on
 evidence) and adapter capacity (1). The remaining gap to the 35B teachers is
 the student's own capacity at 9B and 4.72 bits, which no amount of distillation
 recipe reaches.
+
+## 43. Correction to §42, and v8: error-conditioned data
+
+§42 said "every axis available to a distillation recipe is closed". A second
+reviewer read the repo and pushed back, correctly: what is closed is **offline,
+teacher-generated, sequence-level KD under LoRA**, plus one forward-KL run. It
+was too strong, and this section replaces it.
+
+What v1-v7 never tested, in the reviewer's list and my own reading of it:
+
+- **on-policy / student-error-conditioned data** -- every pool was static
+- **skew or adaptive KL** in place of the forward KL that v5 used
+- **termination-aware KD** -- masking stop tokens from the distribution loss
+- **preference distillation** between verified and failed trajectories
+- **quantization-aware KD** -- training through the oQ4 quantizer
+- **full-parameter updates** -- v7 varied LoRA rank, not the update subspace
+
+Each is a different kind of thing from a data mixture. Taking them in order of
+evidence-per-hour, with one variable moved per run.
+
+### v8: train on what the student gets wrong
+
+Every earlier training set was a function of the *pool's* composition. v8 makes
+it a function of the *student's errors*:
+
+    fresh pool -> v1 rolls out -> verify -> keep the failures
+               -> teacher answers those -> verify -> sequence CE
+               -> continue from v1's fused bf16
+
+Most of a static pool re-teaches what the student already knows. A pool of v1's
+failures does not. This is DAgger's insight at the prompt level; the token-level
+form (arXiv:2306.13649) is the natural next step once this one is measured.
+
+**Held at v1:** objective (sequence CE, the one known to work), teachers,
+verifiers, rank 32 / top 16, lr 3e-5, cosine. **Changed with a reason:**
+`max_seq_len` 2048 -- the failures are hard prompts with long teacher traces,
+and the chunkwise path makes 2048 fit; and `train.base = runs/v1/fused`, so
+the adapter continues from the best checkpoint rather than restarting from the
+stock base. Both are shared with the control arm, so neither confounds the
+comparison that matters.
+
+**The control arm is not optional.** `v8-control` trains on a *random* subset
+of the same pool, same size as the failure arm, everything else identical.
+Without it a gain is confounded with "more training"; with it, the only
+difference between arms is *which* prompts. v2 and v3 showed more data hurts,
+so a positive result would already be notable -- but the control makes it a
+measurement rather than an argument.
+
+### Supply
+
+MBPP is fully consumed (all 974 items across every split went into v1), so the
+fresh code slice comes from **KodCode-V1** (484k items, pytest-style tests).
+The tests import from a `solution` module; the normaliser drops that line --
+the model's own code defines the function in the same program -- and appends a
+runner that calls each test function, so they execute through the existing
+sandbox unchanged. Rows the dataset itself flags, and rows with benchmark
+similarity >= 0.95, are skipped, on top of the 13-gram decontamination the
+dataset stage always runs.
+
+The pool is 5,000 prompts (2,500 knowledge MCQ, 1,200 truthfulness, 1,300
+code), sampled under a different seed with every v1 id explicitly excluded.
+
+### Cost
+
+Student rollouts dominate: ~13 s/item with thinking on, so ~18 hours for the
+pool, unattended. Teacher generation runs only on failures (~2 h). Training on
+~600 samples is ~2 h per arm. The rollout is the price of knowing what the
+student does not know; everything after it is cheap.
+
+### Prediction, on the record before measuring
+
+**v8 beats v8-control on at least one benchmark by more than noise, and
+v8-control does not beat v1.** The second half is the v2/v3 pattern -- more
+generic data does not help -- and the first half is the actual hypothesis. If
+both arms sit inside v1's noise band, error-conditioning at the prompt level is
+not enough and the token-level (GKD) form is the next thing to test. If
+v8-control beats v1, continuing from v1's checkpoint is doing the work, not the
+prompt selection, and that is worth knowing too.
+
+Falsifier: v8 below v1 on HumanEval. The failure prompts are, by construction,
+the hardest ones, and long teacher traces on hard code are the same input that
+made v4's code slice not help. If that pattern repeats here it is a real
+limit on what hard-prompt data can do for this student.

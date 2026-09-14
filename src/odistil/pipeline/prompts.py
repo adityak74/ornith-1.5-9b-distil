@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import string
 from pathlib import Path
 
@@ -98,6 +99,25 @@ def _normalize(src: dict, row: dict, idx: int) -> dict | None:
             aliases = row["answer"].get("normalized_aliases") or [row["answer"]["value"]]
             prompt = QA_TMPL.format(question=row["question"].strip())
             gold = list(aliases)
+        elif hf.endswith("KodCode-V1"):
+            # Fresh verifiable code for v8: MBPP is fully consumed (all 974
+            # items across every split went into v1). KodCode ships pytest-style
+            # tests that import from a `solution` module; the model's own code
+            # defines that function in the same program, so drop the import and
+            # append a runner that calls every test function. Rows the dataset
+            # itself flags, and rows near-duplicating a benchmark, are skipped
+            # -- the 13-gram decontamination in `dataset` still runs on top.
+            if row.get("filter_reason") or float(row.get("benchmark_similarity") or 0) >= 0.95:
+                return None
+            test_src = "\n".join(
+                ln for ln in row["test"].splitlines() if not ln.startswith("from solution import")
+            )
+            fns = re.findall(r"^def (test_\w+)\(", test_src, flags=re.MULTILINE)
+            if not fns:
+                return None
+            runner = "\n".join(f"{fn}()" for fn in fns)
+            prompt = CODE_TMPL.format(question=row["question"].strip(), tests=test_src.strip())
+            gold = {"setup": "", "tests": [test_src, runner]}
         elif hf.endswith("mbpp"):
             tests = "\n".join(row["test_list"])
             prompt = CODE_TMPL.format(question=row["text"].strip(), tests=tests)
@@ -126,6 +146,15 @@ def build(cfg: Config, domains: list[str] | None = None, limit: int | None = Non
     out = cfg.path("prompts.jsonl")
     n_written = 0
 
+    # A fresh pool must not overlap an earlier run's prompts: ids encode the
+    # source index, so any id the excluded file already holds is skipped.
+    exclude: set[str] = set()
+    for path in cfg.distill.get("exclude_prompts", []):
+        with Path(path).open() as f:
+            exclude |= {json.loads(line)["id"] for line in f if line.strip()}
+    if exclude:
+        print(f"  excluding {len(exclude)} ids already used")
+
     with out.open("w") as f:
         for domain, sources in cfg.distill["prompts"].items():
             if domains and domain not in domains:
@@ -144,11 +173,17 @@ def build(cfg: Config, domains: list[str] | None = None, limit: int | None = Non
                 # under this one, which is 5 GPU-hours. Worth adopting at the
                 # start of a run that has nothing to reuse.
                 src_rng = random.Random(f"{seed}:{src['hf']}:{src['split']}")
-                idxs = src_rng.sample(range(len(ds)), k=min(want, len(ds)))
+                # oversample so exclusions and normaliser rejections still
+                # leave `want` items, then stop once that many are written
+                idxs = src_rng.sample(range(len(ds)), k=min(want * 2, len(ds)))
+                got = 0
                 for i in idxs:
+                    if got >= want:
+                        break
                     rec = _normalize(src, ds[i], i)
-                    if rec:
+                    if rec and rec["id"] not in exclude:
                         f.write(json.dumps(rec) + "\n")
                         n_written += 1
+                        got += 1
     print(f"wrote {n_written} prompts -> {out}")
     return out
