@@ -1324,3 +1324,73 @@ benchmark here** (§32: v2 had the best losses and the worst scores):
 v7's val loss is comparable to v2's and v4's — same objective, same metric —
 and is *worse* than both. On this project that means approximately nothing.
 The benchmark is the measurement.
+
+## 42. v7 result: adapter capacity is not the lever. "Capacity, not recipe" is now measured.
+
+| benchmark | v1 | v7 | delta | items | z |
+|---|---:|---:|---:|---:|---:|
+| MMLU | 83.5% | 83.2% | −0.3 pp | −3 / 1000 | −0.26 |
+| TruthfulQA | 79.0% | **77.6%** | −1.4 pp | −11 / 817 | −0.98 |
+| HumanEval | 90.8% | 88.4% | −2.4 pp | −4 / 164 | −1.06 |
+
+(z against a single-proportion SE, which is an upper bound — the paired SE is
+tighter, so these are conservative. Per-item files were not collected for v7.)
+
+**The §41 prediction was right: nothing moved.** All three deltas sit inside
+one standard error, and the falsifier — MMLU moving more than a point — did not
+fire at −0.3. Doubling the adapter from 43.3M to 86.557M trainable parameters,
+on byte-identical data with every other hyperparameter held, changed nothing
+measurable.
+
+This is the sixth failure to beat v1, and it retires the last cheap hypothesis.
+More importantly it converts §38's conclusion from an inference into a
+measurement: "capacity, not recipe" was reached by *eliminating* recipes, and
+adapter capacity was the obvious confound nobody had tested. It has now been
+tested and it is not the lever.
+
+### The shape is the same as every other failure
+
+All three deltas are negative, which is exactly what v2, v3 and v4 did:
+
+| run | MMLU | TruthfulQA | HumanEval |
+|---|---:|---:|---:|
+| **v1** | **83.5%** | **79.0%** | **90.8%** |
+| v2 | −0.4 | −2.1 | −5.4 |
+| v3 | +0.1 | −1.6 | −3.6 |
+| v4 | −0.3 | −2.4 | −1.2 |
+| v7 | −0.3 | −1.4 | −2.4 |
+
+Five runs, twelve of fifteen deltas negative, none positive beyond noise. v1 is
+not merely the best result; it appears to be a local optimum that every
+perturbation tested — mixture, volume, length distribution, objective, adapter
+size — moves away from.
+
+### One thing v7 did preserve
+
+Unlike v5, v7's wall clock is normal: 13,319 s on MMLU against v1's 13,007 s,
+2,970 s on HumanEval against 2,785 s. The termination behaviour that §31
+identifies as the mechanism behind v1's gains survived intact — v7 is a
+healthy model that is simply no better. That is worth recording, because it
+isolates v5's failure as specific to the KL objective rather than to any
+departure from v1.
+
+### Depth was the other half of this experiment and is not worth running
+
+§41 noted that rank 32 across all 32 layers is **86.557M trainable — the same
+size as v7 to three decimals** — and is the only way to reach the bottom half
+of the stack, which no run has adapted. It fits at 55.8 GB and 71 tok/s.
+
+It should not be run. v7 establishes that this capacity increase does nothing
+when allocated wide; the remaining question is whether the same increase
+allocated deep behaves differently, and the prior after six failures is that it
+will not. It costs ~7 hours at a tighter memory margin to test a weaker version
+of a hypothesis just falsified. Recorded as deliberately declined, with the
+config recipe in §41 if anyone disagrees.
+
+### Status
+
+**v1 remains the release.** Seven attempts, one success, and the failures now
+cover data composition (4), training objective (1), filter (1, stopped on
+evidence) and adapter capacity (1). The remaining gap to the 35B teachers is
+the student's own capacity at 9B and 4.72 bits, which no amount of distillation
+recipe reaches.

@@ -1,11 +1,11 @@
 # Repairing what quantization broke: five attempts at distilling Ornith-1.5-9B
 
-A complete record of the project — five distilled models and a sixth stopped
+A complete record of the project — six distilled models and a seventh stopped
 before training, one shipped, one upstream PR open with a second branch behind
 it, one finding worth publishing, and a larger pile of wrong hypotheses than
 right ones.
 
-Detail for every decision is in [`DECISIONS.md`](DECISIONS.md) (40 sections);
+Detail for every decision is in [`DECISIONS.md`](DECISIONS.md) (42 sections);
 this is the paper-shaped summary. Written for whoever picks this up next,
 including future me.
 
@@ -20,9 +20,9 @@ that it can: **v1 recovers +5.5 MMLU and +3.0 HumanEval over the 4-bit model it
 replaces, at identical size and bit width**, beating the 1.8x larger 8-bit
 build on both and matching its own 35B teacher on MMLU.
 
-Five subsequent attempts to improve on v1 — three data-composition changes, one
-change of training objective, and one change of the *filter* — **all failed**,
-and the objective change failed worst. The negative results are the more useful
+Six subsequent attempts to improve on v1 — three data-composition changes, one
+change of training objective, one change of the *filter*, and one doubling of
+**adapter capacity** — **all failed**, and the objective change failed worst. The negative results are the more useful
 half of this document, because they localise where the remaining headroom is
 not.
 
@@ -86,6 +86,7 @@ the same oMLX server under the same protocol.
 | distil-v3-oQ4 | 4.9 GB | 83.6% | 77.4% | 87.2% |
 | distil-v4-oQ4 | 4.9 GB | 83.2% | 76.6% | 89.6% |
 | distil-v5-oQ4 | 4.9 GB | 77.2% | not run | not run |
+| distil-v7-oQ4 | 4.9 GB | 83.2% | 77.6% | 88.4% |
 | Ornith-1.5-35B-A3B-4bit (teacher) | 18 GB | 83.0% | 86.4% | 93.3% |
 | Qwen3.6-35B-A3B-4bit (teacher) | 19 GB | **89.3%** | **89.2%** | 93.3% |
 
@@ -107,6 +108,7 @@ model. That is most of this document.
 | v4 | 1024-token length bias removed, all else held | 83.2% | 76.6% | 89.6% |
 | v5 | **objective changed**: CE → CE + KL on teacher top-64 | 77.2% | — | — |
 | v6 | **filter changed**: recover verified abstentions | stopped before training |  |  |
+| v7 | **adapter doubled**: rank 32 → 64, data identical | 83.2% | 77.6% | 88.4% |
 
 ---
 
@@ -310,7 +312,45 @@ and an empty answer is not a confident one. §4's truncation finding,
 reappearing inside our own pipeline. Now uses the teacher's own 2,048 budget
 with escalating retry, and counts no-answer separately.
 
-### 5.5 Other things that failed
+### 5.5 v7: doubling the adapter changed nothing, which is the point
+
+Five runs concluded the residual gap was "capacity, not recipe" — reached by
+*eliminating* recipes. But every run v1–v6 used rank 32 over the top 16 of 32
+layers, chosen once before v1 and never revisited while five other things were
+swept. Adapter capacity was the obvious confound nobody had tested.
+
+v7 doubled it — rank 32 → 64, 43.3M → 86.557M trainable — on **byte-identical
+data** (sha256 verified) with steps, learning rate, schedule, batch size and
+length cap all held at v1.
+
+| benchmark | v1 | v7 | delta | items | z |
+|---|---:|---:|---:|---:|---:|
+| MMLU | 83.5% | 83.2% | −0.3 pp | −3 / 1000 | −0.26 |
+| TruthfulQA | 79.0% | 77.6% | −1.4 pp | −11 / 817 | −0.98 |
+| HumanEval | 90.8% | 88.4% | −2.4 pp | −4 / 164 | −1.06 |
+
+**The prediction, recorded before the run, was "nothing moves", and nothing
+moved.** All three deltas sit within one standard error and the falsifier —
+MMLU shifting more than a point — did not fire at −0.3.
+
+A null result, but the useful kind: it converts "capacity, not recipe" from an
+inference into a measurement.
+
+Two details worth keeping. **Rank 64 across all 32 layers OOMs on 64 GB** —
+backprop *depth*, not rank, is what costs, since adapting the full stack
+roughly doubles activation memory. And the variant that does fit, rank 32 over
+all 32 layers, is **86.557M trainable, the same size as v7 to three decimals**:
+the same capacity allocated deep instead of wide, the only route to the bottom
+half of the stack no run has ever adapted. It was **deliberately not run** —
+~7 hours at a tighter memory margin to test a weaker form of a hypothesis just
+falsified.
+
+Unlike v5, v7's wall clock is normal (13,319 s on MMLU against v1's 13,007 s).
+The termination behaviour behind v1's gains survived intact — v7 is a healthy
+model that is simply no better, which isolates v5's failure as specific to the
+KL objective rather than to any departure from v1.
+
+### 5.6 Other things that failed
 
 **Telling the code teacher to be brief cost 5.4 points of HumanEval.** It
 worked as instructed — median reasoning fell 1,328 → 1,034 characters and the
@@ -448,48 +488,50 @@ the highest-leverage thing in the project, and it was not on the plan.
 
 ---
 
-## 8. Conclusions, and what is actually left
+## 8. Conclusions
 
-**Three axes are closed, and one was never opened.** Data composition failed
-four times (§5.1), including once against a bias that was measured rather than
-guessed. The training objective failed once, worse than anything else (§5.3).
-The filter — the one remaining idea with a clean mechanism behind it — turned
-out to have no supply to draw on, because the teacher does not express
-calibrated uncertainty (§5.4).
+**Every axis available to a distillation recipe is now closed, by measurement
+rather than by elimination.**
 
-**v1 is the result**, and it is a good one: a one-time repair of what
-quantization broke, +5.5 MMLU and +3.0 HumanEval at the same size and bit
-width, plus a 15–33% speedup from the same mechanism.
+| axis | attempts | outcome |
+|---|---:|---|
+| data composition | 4 | all failed; MMLU saturated at ~83.5 (§5.1) |
+| training objective | 1 | failed worst — below stock (§5.3) |
+| the filter | 1 | no supply: the teacher does not hedge (§5.4) |
+| adapter capacity | 1 | no effect; all deltas within 1 SE (§5.5) |
 
-**What was never varied is the adapter.** Every run — v1 through v6 — used
-rank 32 over the top 16 of 32 layers, chosen once before v1 and never revisited
-while five other things were swept. §5.3 concluded the residual gap is
-"capacity, not recipe", but *adapter* capacity is the one capacity knob the
-project never tested. That asymmetry is the most obvious thing left.
+Across v2, v3, v4 and v7 — the four runs that completed and are directly
+comparable — **twelve of fifteen benchmark deltas are negative and none is
+positive beyond noise.** v1 is not merely the best result; it behaves like a
+local optimum that every perturbation tested moves away from.
 
-In descending order of expected value:
+**v1 is the release**, and it is a good one: a one-time repair of what
+quantization broke — +5.5 MMLU and +3.0 HumanEval over the 4-bit model it
+replaces, at identical size and bit width, beating the 1.8x larger 8-bit build
+on both and matching its own 35B teacher on MMLU, plus a 15–33% speedup from
+the same termination mechanism.
 
-1. **Vary the adapter, not the data.** Rank 32 → 64 and top-16 → all 32 layers,
-   holding data, steps and learning rate fixed. Cheap (same pipeline, one
-   config change), directly tests the conclusion five runs have been leaning
-   on, and is the only untouched axis. If capacity is genuinely the limit, this
-   is where it shows; if it changes nothing, "capacity, not recipe" is
-   confirmed properly rather than by elimination.
-2. **Train the domains in sequence rather than mixed.** Also never tried. The
-   40/25/35 mixture assumes the three slices do not interfere, and nothing
-   tested that assumption — TruthfulQA falling below stock in *every* run while
-   MMLU and HumanEval rise is at least consistent with interference.
-3. **Land mlx-lm#1870, then open the fused-solve PR.** The engineering work is
-   done and tested; only the review queue stands between it and five model
+The remaining gap to the teachers (83.5 against Qwen's 89.3) is the student's
+own capacity at 9B and 4.72 bits. No distillation recipe reaches it.
+
+### What is genuinely left
+
+1. **Land mlx-lm#1870, then open the fused-solve PR.** The highest-value item
+   remaining, and it is not about this model at all: the engineering work is
+   done and tested, and only the review queue stands between it and five model
    families training an order of magnitude cheaper.
-4. **If abstention is revisited, change the teacher, not the filter.** §5.4
-   shows the supply problem is in Qwen3.6-35B itself. A teacher that actually
-   hedges — or a non-distillation method such as calibration tuning on the
-   student's own logits — is the only route that could work.
-5. **Don't try another data mixture, and don't retry logit KD unchanged.** Four
-   and one failures respectively. If logit KD is retried, fix the termination
-   signal first (lower KL weight, or exclude the KL term near end-of-reasoning
-   tokens) and report truncation rate and wall clock, not just accuracy.
-6. **Cut Cross-Entropy** ([arXiv:2411.09009](https://arxiv.org/abs/2411.09009)).
-   A 248,044-token vocabulary costs ~3.8 GB in logits at 2048 — the largest
-   remaining implementation-level cost.
+2. **Write up the termination finding (§4).** It generalises beyond this
+   project: quantization damages a reasoning model's ability to *stop* more
+   than its ability to reason, and any benchmark of a reasoning model that does
+   not report its truncation rate is partly reporting its own token budget.
+   §5.4 adds a second, smaller observation worth including — a 35B teacher
+   re-asserted a confident answer on **82%** of questions it had already
+   answered wrong, when explicitly invited to say it did not know.
+3. **If the model itself is revisited, change what the recipe cannot.** A
+   larger student, a higher bit width, or a teacher that actually expresses
+   calibrated uncertainty. Everything reachable from a 9B student at 4.72 bits
+   with these two teachers has been tried.
+4. **Do not run**: another data mixture (4 failures), logit KD unchanged (§5.3
+   — and if retried, fix the termination signal and report truncation rate and
+   wall clock, not just accuracy), or the depth variant of v7 (§5.5, declined
+   deliberately).

@@ -230,6 +230,27 @@
     "seconds": 69897.2
    },
    "note": "v5, logit-level distillation (0.3*CE + 0.7*KL over teacher top-64), oMLX 2026-09-12. First distil below stock oQ4 on MMLU, and 5.4x v1's wall clock on the same 1,000 questions -- a termination failure, not a reasoning failure. TruthfulQA and HumanEval were not run; the model was abandoned after MMLU. Not released."
+  },
+  "Ornith-1.5-9B-MLX-distil-v7-oQ4": {
+   "mmlu": {
+    "accuracy": 0.832,
+    "correct": 832,
+    "total": 1000,
+    "seconds": 13319.1
+   },
+   "truthfulqa": {
+    "accuracy": 0.776,
+    "correct": 634,
+    "total": 817,
+    "seconds": 10895.0
+   },
+   "humaneval": {
+    "accuracy": 0.884,
+    "correct": 145,
+    "total": 164,
+    "seconds": 2969.7
+   },
+   "note": "v7, oMLX 2026-09-13. Adapter capacity doubled (rank 64 vs 32, top-16 layers held), training data byte-identical to v1. All three deltas within ~1 SE of v1 and all negative. Adapter capacity is not the lever. Not released."
   }
  },
  "targets": {
