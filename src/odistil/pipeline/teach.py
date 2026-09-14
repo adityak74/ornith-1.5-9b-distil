@@ -81,11 +81,16 @@ def run(cfg: Config, teachers: list[str] | None = None, limit: int | None = None
         bs = tconf["batch_size"]
         retries = tconf.get("max_retries", 0)
         # Batch within a domain: one system prompt per batch, and styles differ.
-        todo.sort(key=lambda r: r["domain"])
+        # Group first, then batch inside each group -- filtering a mixed chunk to
+        # its first domain and advancing by bs dropped up to bs-1 prompts at
+        # every domain boundary, silently, on every run since v1.
+        groups: dict[str, list[dict]] = defaultdict(list)
+        for r in todo:
+            groups[r["domain"]].append(r)
+        batches = [g[i : i + bs] for g in groups.values() for i in range(0, len(g), bs)]
+        n_done = 0
         with out.open("a") as f:
-            for i in range(0, len(todo), bs):
-                chunk = todo[i : i + bs]
-                chunk = [c for c in chunk if c["domain"] == chunk[0]["domain"]]
+            for chunk in batches:
 
                 comps = _gen(t, tconf, bs, chunk, t["max_tokens"])
 
@@ -121,7 +126,8 @@ def run(cfg: Config, teachers: list[str] | None = None, limit: int | None = None
                         + "\n"
                     )
                     f.flush()
-                print(f"  {min(i + bs, len(todo))}/{len(todo)}", end="\r", flush=True)
+                n_done += len(chunk)
+                print(f"  {n_done}/{len(todo)}", end="\r", flush=True)
         print(f"\n[{tname}] -> {out}")
         written.append(out)
     return written

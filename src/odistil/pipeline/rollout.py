@@ -65,12 +65,16 @@ def run(cfg: Config, limit: int | None = None) -> Path:
 
     bs = rcfg.get("batch_size", 8)
     dcfg = cfg.distill["dataset"]
-    # batch by kind so one budget applies per batch
-    todo.sort(key=lambda p: p["kind"])
+    # group by kind so one budget applies per batch; batch WITHIN each group
+    # (filtering a mixed chunk to its first kind and advancing by bs silently
+    # drops the rest of that chunk at every boundary)
+    groups: dict[str, list[dict]] = {}
+    for p in todo:
+        groups.setdefault(p["kind"], []).append(p)
+    batches = [g[i : i + bs] for g in groups.values() for i in range(0, len(g), bs)]
+    n_done = 0
     with out.open("a") as f:
-        for i in range(0, len(todo), bs):
-            chunk = todo[i : i + bs]
-            chunk = [c for c in chunk if c["kind"] == chunk[0]["kind"]]
+        for chunk in batches:
             comps = generate_batch(
                 student,
                 [c["prompt"] for c in chunk],
@@ -94,8 +98,8 @@ def run(cfg: Config, limit: int | None = None) -> Path:
                     "answer": comp.text,
                 }) + "\n")
                 f.flush()
-            n = min(i + bs, len(todo))
-            print(f"  {n}/{len(todo)}", end="\r", flush=True)
+            n_done += len(chunk)
+            print(f"  {n_done}/{len(todo)}", end="\r", flush=True)
 
     return triage(cfg)
 
