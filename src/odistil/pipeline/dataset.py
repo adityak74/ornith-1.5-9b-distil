@@ -67,7 +67,9 @@ def _verify(rec: dict, dcfg: dict) -> tuple[bool, str]:
     if kind == "qa" and dcfg["verify_qa"]:
         return (qa_match(answer, gold), "qa")
     if kind == "code" and dcfg["verify_code"]:
-        ok, err = check_with_tests(answer, gold.get("setup", ""), gold["tests"])
+        ok, err = check_with_tests(
+            answer, gold.get("setup", ""), gold["tests"], preamble=gold.get("preamble", "")
+        )
         return ok, f"code:{err.splitlines()[-1][:60] if err else 'ok'}"
     if kind == "code_free" and dcfg["verify_code"]:
         # No tests exist for these. Require at least a syntactically valid code

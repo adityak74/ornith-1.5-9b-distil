@@ -42,14 +42,19 @@ def test_kodcode_normaliser_builds_runnable_tests():
     rec = _normalize(src, row, 7)
     assert rec is not None
     assert "from solution import" not in rec["prompt"]
-    assert rec["gold"]["tests"][1] == "test_a()\ntest_b()"
+    assert rec["gold"]["tests"] == ["test_a()\ntest_b()"]
 
     from odistil.codeexec import check_with_tests
 
-    ok, _ = check_with_tests("```python\ndef total(xs): return sum(xs)\n```", "", rec["gold"]["tests"])
+    g = rec["gold"]
+    ok, _ = check_with_tests("```python\ndef total(xs): return sum(xs)\n```", "", g["tests"], preamble=g["preamble"])
     assert ok
-    bad, _ = check_with_tests("```python\ndef total(xs): return 0\n```", "", rec["gold"]["tests"])
+    bad, _ = check_with_tests("```python\ndef total(xs): return 0\n```", "", g["tests"], preamble=g["preamble"])
     assert not bad
+    # the model copying a test call into its own block must not be a NameError
+    copied = "```python\ndef total(xs): return sum(xs)\ntest_a()\n```"
+    ok2, err = check_with_tests(copied, "", g["tests"], preamble=g["preamble"])
+    assert ok2, err
 
 
 def test_kodcode_normaliser_skips_flagged_and_near_benchmark_rows():

@@ -117,7 +117,7 @@ def _normalize(src: dict, row: dict, idx: int) -> dict | None:
                 return None
             runner = "\n".join(f"{fn}()" for fn in fns)
             prompt = CODE_TMPL.format(question=row["question"].strip(), tests=test_src.strip())
-            gold = {"setup": "", "tests": [test_src, runner]}
+            gold = {"preamble": test_src, "setup": "", "tests": [runner]}
         elif hf.endswith("mbpp"):
             tests = "\n".join(row["test_list"])
             prompt = CODE_TMPL.format(question=row["text"].strip(), tests=tests)

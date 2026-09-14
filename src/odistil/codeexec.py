@@ -59,6 +59,13 @@ def run_program(program: str, timeout: float = 10.0) -> tuple[bool, str]:
         return p.returncode == 0, (p.stderr or "")[-2000:]
 
 
-def check_with_tests(completion: str, setup: str, tests: list[str], timeout: float = 10.0) -> tuple[bool, str]:
-    program = "\n".join([extract_code(completion), setup, *tests])
+def check_with_tests(
+    completion: str, setup: str, tests: list[str], timeout: float = 10.0, preamble: str = ""
+) -> tuple[bool, str]:
+    # `preamble` runs BEFORE the model's code. Test-function definitions go
+    # there: the prompt shows the model named tests, and it sometimes copies a
+    # call like `test_x()` into its own block, which is a NameError if the
+    # definitions only arrive afterwards. Definitions are inert until called,
+    # so hoisting them is safe; bare asserts (MBPP) must stay after the code.
+    program = "\n".join([preamble, extract_code(completion), setup, *tests])
     return run_program(program, timeout)

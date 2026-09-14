@@ -90,6 +90,8 @@ def run(cfg: Config, limit: int | None = None) -> Path:
                     "truncated": comp.truncated,
                     "tokens": comp.tokens,
                     "why": why,
+                    # kept so a verifier fix can re-score without regenerating
+                    "answer": comp.text,
                 }) + "\n")
                 f.flush()
             n = min(i + bs, len(todo))
