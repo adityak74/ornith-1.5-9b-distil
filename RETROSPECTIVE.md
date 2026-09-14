@@ -135,6 +135,9 @@ designing around it. See §6.
 
 ## 4. The finding worth publishing
 
+*Written up on its own in [`docs/TERMINATION.md`](docs/TERMINATION.md), with the
+quantization ladder, the budget-sensitivity control, and the v5 counter-evidence.*
+
 **Quantization damages a reasoning model's ability to stop more than its
 ability to reason.**
 
