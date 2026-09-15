@@ -75,8 +75,8 @@ train:
   batch_size: 1           # memory scales ~20 MB/token; batch 2 does not fit
   grad_accumulation_steps: 1   # 4 kept four backward graphs alive and hit
                                # Metal's 499000 live-resource limit
-  iters: 1200            # ~2 epochs over the expected ~600 verified failures;
-                         # set after `dataset` reports the real count
+  iters: 660             # ~2 epochs over the 330 verified failures the dataset
+                         # stage actually kept (of 1,247); same for both arms
   learning_rate: 3.0e-5   # lowered with the effective batch (4 -> 1)
   lr_schedule: cosine_decay
   warmup: 150

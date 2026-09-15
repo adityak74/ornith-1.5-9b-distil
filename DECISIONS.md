@@ -1477,3 +1477,54 @@ Falsifier: v8 below v1 on HumanEval. The failure prompts are, by construction,
 the hardest ones, and long teacher traces on hard code are the same input that
 made v4's code slice not help. If that pattern repeats here it is a real
 limit on what hard-prompt data can do for this student.
+
+### v8 rollout and yield (recorded as measured)
+
+**v1's accuracy on the fresh 4,974-prompt pool**, rolled out at oQ4 with the
+eval budgets:
+
+| kind | n | correct | wrong | truncated |
+|---|---:|---:|---:|---:|
+| code (KodCode) | 1,300 | **49.2%** | 661 | **461** |
+| MCQ | 2,878 | 91.2% | 252 | 54 |
+| open-ended QA | 796 | 58.0% | 334 | 85 |
+
+KodCode is far harder than MBPP for this student, and 70% of its code failures
+are truncations, not wrong code. MCQ at 91% is roughly v1's MMLU, so its 252
+failures are the genuinely hard tail. Failure arm: **1,247 prompts**; control:
+1,247 random.
+
+**Teacher yield on the failure arm was low, and the reason is length:**
+
+| rejection | n |
+|---|---:|
+| teacher produced no answer within 4,608 tokens | 267 |
+| trace over the 2,048-token cap | 182 |
+| code failed tests | 218 |
+| MCQ / QA wrong against gold | 250 |
+| **kept** | **330 (26%)** |
+
+On the code slice specifically the 35B teacher verified on only 29% of
+attempts and **failed to terminate on 38%** even after two budget escalations.
+That is the termination finding (docs/TERMINATION.md) appearing in a 35B model
+on prompts selected by a 9B's failures, and it goes in that write-up.
+
+**Two decisions made here, both shared by the control arm so neither confounds
+the comparison:**
+
+- The 2,048 cap stays. Raising it to 3,072 would recover ~182 traces but is a
+  memory risk on an unattended run, v4 showed the length axis alone does
+  nothing, and it is a second variable.
+- The control is pinned to **330 samples and 660 steps**, matching the failure
+  arm exactly. Same N, same steps; only the prompts differ.
+
+**The mixture is not held.** The failure arm came out 58% truthfulness / 27%
+knowledge / 15% code, because composition is downstream of which prompts fail.
+That is inherent to the design, applies identically to both arms' logic, and
+is one more reason the control matters.
+
+**A bug found on the way:** both `teach` and `rollout` filtered each batch to
+its first item's domain and then advanced by `batch_size`, dropping the rest of
+any chunk that straddled a boundary. `teach` has done this silently since v1
+(≤ batch_size−1 prompts per boundary per run). Both now group first and batch
+within groups.
