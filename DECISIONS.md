@@ -1528,3 +1528,22 @@ its first item's domain and then advanced by `batch_size`, dropping the rest of
 any chunk that straddled a boundary. `teach` has done this silently since v1
 (≤ batch_size−1 prompts per boundary per run). Both now group first and batch
 within groups.
+
+### v8 and v8-control: trained and installed
+
+Both arms: 330 samples (324 train / 6 valid), 660 steps, rank 32 / top 16
+(43.278M trainable, v1's exact adapter), lr 3e-5 cosine, 2,048 cap, continued
+from v1's fused bf16. Peak 46.9 GB, ~110-120 tok/s, ~1.5 h each.
+
+| arm | tokens | train loss | val loss (6 items) |
+|---|---:|---:|---:|
+| v8 (failures) | 616,937 | 0.079 | 0.281 → 0.285 |
+| v8-control (random) | 579,319 | 0.064 | 0.368 → 0.358 |
+
+Val is over six items and is not comparable across arms (different items).
+Both quantized at 4.721 bits, 120/120 promoted, installed as
+`Ornith-1.5-9B-MLX-distil-v8-oQ4` and `Ornith-1.5-9B-MLX-distil-v8ctl-oQ4`.
+
+The comparison that matters is three-way: **v8 vs v8-control** (does prompt
+selection matter?) and **each vs v1** (does continuing from v1 on 330 more
+samples do anything at all?). §43's prediction stands as written.
