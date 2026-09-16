@@ -1,9 +1,9 @@
-# Repairing what quantization broke: five attempts at distilling Ornith-1.5-9B
+# Repairing what quantization broke: nine attempts at distilling Ornith-1.5-9B
 
-A complete record of the project — six distilled models and a seventh stopped
-before training, one shipped, one upstream PR open with a second branch behind
-it, one finding worth publishing, and a larger pile of wrong hypotheses than
-right ones.
+A complete record of the project, 4–16 September 2026 — eight distilled models
+plus a controlled arm, one stopped before training, one shipped; one upstream
+PR open with a second branch behind it; one finding worth publishing; and a
+larger pile of wrong hypotheses than right ones.
 
 Detail for every decision is in [`DECISIONS.md`](DECISIONS.md) (44 sections);
 this is the paper-shaped summary. Written for whoever picks this up next,
@@ -20,9 +20,14 @@ that it can: **v1 recovers +5.5 MMLU and +3.0 HumanEval over the 4-bit model it
 replaces, at identical size and bit width**, beating the 1.8x larger 8-bit
 build on both and matching its own 35B teacher on MMLU.
 
-Six subsequent attempts to improve on v1 — three data-composition changes, one
-change of training objective, one change of the *filter*, and one doubling of
-**adapter capacity** — **all failed**, and the objective change failed worst. The negative results are the more useful
+Eight subsequent attempts to improve on v1 — three data-composition changes,
+one change of training objective, one change of the *filter*, one doubling of
+adapter capacity, and one **on-policy** run that trained on the student's own
+failures with a random-prompt control — **all failed**. The objective change
+failed worst; the on-policy run's control showed that a second training pass
+from v1 costs 1–4 points regardless of what it trains on. Twenty-one of
+twenty-four comparable benchmark deltas across six completed runs are negative
+and none is positive beyond noise. The negative results are the more useful
 half of this document, because they localise where the remaining headroom is
 not.
 
@@ -530,6 +535,27 @@ work inside a 1024-token limit — trimming data, choosing what to sacrifice. Th
 limit was a sequential loop in a dependency, and removing it took a day. It is
 the highest-leverage thing in the project, and it was not on the plan.
 
+**Run the control.** v8 without its control arm would have read as "training
+on the student's failures hurts" — a clean, wrong story. With it, the reading
+is that the second pass itself hurts and the prompts are irrelevant, which
+constrains every remaining idea. The control cost two hours of teacher time
+and roughly doubled what the experiment was worth.
+
+**Smoke-test before the overnight run.** A 24-item dry run of the v8 rollout
+caught a verifier ordering bug that would have silently mislabelled a tenth of
+the code failures, and revealed that rollouts did not store answer text, so the
+bug could not have been re-scored afterwards. Ten minutes, against eighteen
+hours of GPU that would have measured the wrong thing.
+
+**A bug can be old.** The batching loop that dropped prompts at every domain
+boundary had been in `teach` since v1. It surfaced only because v8's per-kind
+counts were printed and did not sum. Print the totals; check the arithmetic.
+
+**Stop on evidence, not on fatigue.** v6 was stopped before training because a
+threshold set in advance (~60 usable samples) came in at zero. That is cheaper
+than a null benchmark and more informative — the stopping reason (the teacher
+does not hedge) is the finding.
+
 ---
 
 ## 8. Conclusions
@@ -575,18 +601,36 @@ own capacity at 9B and 4.72 bits. No distillation recipe reaches it.
    remaining, and it is not about this model at all: the engineering work is
    done and tested, and only the review queue stands between it and five model
    families training an order of magnitude cheaper.
-2. **Write up the termination finding (§4).** It generalises beyond this
-   project: quantization damages a reasoning model's ability to *stop* more
-   than its ability to reason, and any benchmark of a reasoning model that does
-   not report its truncation rate is partly reporting its own token budget.
-   §5.4 adds a second, smaller observation worth including — a 35B teacher
-   re-asserted a confident answer on **82%** of questions it had already
-   answered wrong, when explicitly invited to say it did not know.
-3. **If the model itself is revisited, change what the recipe cannot.** A
-   larger student, a higher bit width, or a teacher that actually expresses
-   calibrated uncertainty. Everything reachable from a 9B student at 4.72 bits
-   with these two teachers has been tried.
-4. **Do not run**: another data mixture (4 failures), logit KD unchanged (§5.3
-   — and if retried, fix the termination signal and report truncation rate and
-   wall clock, not just accuracy), or the depth variant of v7 (§5.5, declined
-   deliberately).
+2. **The termination finding is written up** — [`docs/TERMINATION.md`](docs/TERMINATION.md).
+   It generalises beyond this project: quantization damages a reasoning model's
+   ability to *stop* more than its ability to reason, and any benchmark that
+   does not report its truncation rate is partly reporting its own token
+   budget. Two later observations belong with it: a 35B teacher re-asserted a
+   confident answer on **82%** of questions it had already answered wrong when
+   invited to say it did not know (§5.4), and the same teacher **failed to
+   terminate on 38%** of the code prompts a 9B fails, even at 4,608 tokens
+   (§5.6).
+3. **If anyone continues, the constraint v8 imposes comes first.** Continuing
+   from v1 costs 1–4 points before any method helps. So either (a) measure
+   whether quantization is costing v1 anything at all — benchmark
+   `runs/v1/fused` in bf16, no training — and only pursue quantization-aware
+   self-distillation if that gap is real; or (b) accept a from-scratch run
+   that has to re-earn v1's gains. Token-level GKD with skew KL and
+   termination-token masking is the best-motivated from-scratch candidate;
+   forward KL is not.
+4. **Change what the recipe cannot.** A larger student, a higher bit width, or
+   a teacher that actually expresses calibrated uncertainty. Everything
+   reachable from a 9B student at 4.72 bits with these two teachers, under
+   sequence-level KD and LoRA, has been tried.
+5. **Do not run**: another data mixture (4 failures), logit KD with forward KL
+   (§5.3), the depth variant of v7 (§5.5), or a second continuation from v1
+   without first accounting for the tax (§5.6).
+
+### Status, 16 September 2026
+
+`Ornith-1.5-9B-MLX-distil-oQ4` is the release and the only distilled build
+left installed. The repository is public at `adityak74/ornith-1.5-9b-distil`
+with every run's adapters, fused checkpoints, teacher traces and evaluation
+records under `runs/`. Baseline and every run's numbers are in
+`benchmarks/baseline.json`, each measured on the same oMLX harness under the
+same protocol. This document and `DECISIONS.md` are complete through v8.
