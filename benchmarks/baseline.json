@@ -251,6 +251,48 @@
     "seconds": 2969.7
    },
    "note": "v7, oMLX 2026-09-13. Adapter capacity doubled (rank 64 vs 32, top-16 layers held), training data byte-identical to v1. All three deltas within ~1 SE of v1 and all negative. Adapter capacity is not the lever. Not released."
+  },
+  "Ornith-1.5-9B-MLX-distil-v8-oQ4": {
+   "mmlu": {
+    "accuracy": 0.816,
+    "correct": 816,
+    "total": 1000,
+    "seconds": 13836.0
+   },
+   "truthfulqa": {
+    "accuracy": 0.763,
+    "correct": 623,
+    "total": 817,
+    "seconds": 13390.0
+   },
+   "humaneval": {
+    "accuracy": 0.854,
+    "correct": 140,
+    "total": 164,
+    "seconds": 3128.9
+   },
+   "note": "v8, oMLX 2026-09-15. Error-conditioned data: 330 verified teacher traces on prompts v1 failed, continued from v1's fused bf16, 660 steps. Below v1 on all three; HumanEval -5.4 fired the pre-registered falsifier. Interpretation waits on v8ctl. Not released."
+  },
+  "Ornith-1.5-9B-MLX-distil-v8ctl-oQ4": {
+   "mmlu": {
+    "accuracy": 0.832,
+    "correct": 832,
+    "total": 1000,
+    "seconds": 19033.5
+   },
+   "truthfulqa": {
+    "accuracy": 0.777,
+    "correct": 635,
+    "total": 817,
+    "seconds": 21549.7
+   },
+   "humaneval": {
+    "accuracy": 0.866,
+    "correct": 142,
+    "total": 164,
+    "seconds": 4880.1
+   },
+   "note": "v8-control, oMLX 2026-09-16. Same recipe as v8 on 330 RANDOM prompts from the same pool. Also below v1 on all three; slightly above v8 but within noise. Wall clock +46-80% vs v1 (unexplained; v8 was +6-12%). Not released."
   }
  },
  "targets": {

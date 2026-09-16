@@ -5,7 +5,7 @@ before training, one shipped, one upstream PR open with a second branch behind
 it, one finding worth publishing, and a larger pile of wrong hypotheses than
 right ones.
 
-Detail for every decision is in [`DECISIONS.md`](DECISIONS.md) (42 sections);
+Detail for every decision is in [`DECISIONS.md`](DECISIONS.md) (44 sections);
 this is the paper-shaped summary. Written for whoever picks this up next,
 including future me.
 
@@ -87,6 +87,8 @@ the same oMLX server under the same protocol.
 | distil-v4-oQ4 | 4.9 GB | 83.2% | 76.6% | 89.6% |
 | distil-v5-oQ4 | 4.9 GB | 77.2% | not run | not run |
 | distil-v7-oQ4 | 4.9 GB | 83.2% | 77.6% | 88.4% |
+| distil-v8-oQ4 | 4.9 GB | 81.6% | 76.3% | 85.4% |
+| distil-v8ctl-oQ4 | 4.9 GB | 83.2% | 77.7% | 86.6% |
 | Ornith-1.5-35B-A3B-4bit (teacher) | 18 GB | 83.0% | 86.4% | 93.3% |
 | Qwen3.6-35B-A3B-4bit (teacher) | 19 GB | **89.3%** | **89.2%** | 93.3% |
 
@@ -109,6 +111,8 @@ model. That is most of this document.
 | v5 | **objective changed**: CE → CE + KL on teacher top-64 | 77.2% | — | — |
 | v6 | **filter changed**: recover verified abstentions | stopped before training |  |  |
 | v7 | **adapter doubled**: rank 32 → 64, data identical | 83.2% | 77.6% | 88.4% |
+| v8 | **error-conditioned prompts**, continued from v1 | 81.6% | 76.3% | 85.4% |
+| v8-control | same recipe, **random** prompts | 83.2% | 77.7% | 86.6% |
 
 ---
 
@@ -353,7 +357,44 @@ The termination behaviour behind v1's gains survived intact — v7 is a healthy
 model that is simply no better, which isolates v5's failure as specific to the
 KL objective rather than to any departure from v1.
 
-### 5.6 Other things that failed
+### 5.6 v8: error-conditioned data, and what its control revealed
+
+A second reviewer correctly pushed back on §8's earlier "every axis closed":
+what was closed was offline sequence KD under LoRA. The first untried axis
+taken up was **on-policy data at the prompt level** — roll v1 out over a fresh
+4,974-prompt pool, keep the 1,247 it fails, have the teacher answer only
+those, and train on the 330 that verify, continuing from v1's fused bf16 with
+sequence CE. A control arm trained on 330 *random* prompts from the same pool
+with everything else identical.
+
+| | v1 | v8-control | v8 |
+|---|---:|---:|---:|
+| MMLU | **83.5%** | 83.2% | 81.6% |
+| TruthfulQA | **79.0%** | 77.7% | 76.3% |
+| HumanEval | **90.8%** | 86.6% | 85.4% |
+
+**The prediction was wrong on both halves.** v8 did not beat its control on
+any benchmark, and the control did not sit at v1 — it lost on all three,
+HumanEval by 4.2. The control is what makes this interpretable: the two arms
+differ only in prompts and both lost by similar amounts, so **the second
+training pass from v1 is the damage, regardless of what it trains on.** v1 is
+a sharp optimum. Nine of nine deltas negative.
+
+Two things worth keeping. The yield asymmetry: the same teacher verified on
+73% of random prompts and 26% of v1's failures, and on the code failures
+**did not terminate on 38%** even at 4,608 tokens — the termination failure
+in a 35B. And a wall-clock split that is real but unexplained: the random-arm
+model became 46–80% slower to answer while the failure-arm model barely
+changed; the failure arm's traces are by selection the ones a 35B finished
+cleanly, which may be the one thing error-conditioning did. Server load
+during the control run cannot be excluded.
+
+Three bugs surfaced on the way, all fixed: a verifier ordering that scored
+model-copied test calls as NameErrors; a batching loop that silently dropped
+prompts at every domain boundary — in `teach` since v1; and rollouts that did
+not store answer text.
+
+### 5.7 Other things that failed
 
 **Telling the code teacher to be brief cost 5.4 points of HumanEval.** It
 worked as instructed — median reasoning fell 1,328 → 1,034 characters and the
@@ -502,11 +543,22 @@ rather than by elimination.**
 | training objective | 1 | failed worst — below stock (§5.3) |
 | the filter | 1 | no supply: the teacher does not hedge (§5.4) |
 | adapter capacity | 1 | no effect; all deltas within 1 SE (§5.5) |
+| error-conditioned prompts, continued from v1 | 1 + control | both arms below v1; the continuation itself costs (§5.6) |
 
-Across v2, v3, v4 and v7 — the four runs that completed and are directly
-comparable — **twelve of fifteen benchmark deltas are negative and none is
-positive beyond noise.** v1 is not merely the best result; it behaves like a
-local optimum that every perturbation tested moves away from.
+Across v2, v3, v4, v7, v8 and its control — the six completed, directly
+comparable runs — **twenty-one of twenty-four benchmark deltas are negative
+and none is positive beyond noise.** v1 is not merely the best result; it is a
+sharp optimum that every perturbation tested moves away from, including a
+second training pass on more verified data of either kind.
+
+"Every axis closed" was too strong once (§5.6 opens with the correction).
+What is now established is narrower and better supported: within
+sequence-level KD under LoRA on this hardware, nothing tried — mixture,
+volume, length, objective, filter, capacity, or on-policy prompt selection —
+improves on v1, and continuing from v1 costs 1–4 points before any method
+gets to help. Untried items remain (token-level GKD with skew KL and
+termination masking; quantization-aware self-distillation, gated on first
+measuring v1-bf16; full-parameter updates), each now facing that tax.
 
 **v1 is the release**, and it is a good one: a one-time repair of what
 quantization broke — +5.5 MMLU and +3.0 HumanEval over the 4-bit model it

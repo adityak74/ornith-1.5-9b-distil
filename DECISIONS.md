@@ -1547,3 +1547,70 @@ Both quantized at 4.721 bits, 120/120 promoted, installed as
 The comparison that matters is three-way: **v8 vs v8-control** (does prompt
 selection matter?) and **each vs v1** (does continuing from v1 on 330 more
 samples do anything at all?). §43's prediction stands as written.
+
+## 44. v8 result: both arms below v1. The second pass is the damage, not the prompts.
+
+| | v1 | v8-control | v8 | ctl − v1 | v8 − ctl |
+|---|---:|---:|---:|---:|---:|
+| MMLU | **83.5%** | 83.2% | 81.6% | −0.3 (z −0.3) | −1.6 (z −1.4) |
+| TruthfulQA | **79.0%** | 77.7% | 76.3% | −1.3 (z −0.9) | −1.4 (z −1.0) |
+| HumanEval | **90.8%** | 86.6% | 85.4% | −4.2 (z −1.9) | −1.2 (z −0.5) |
+
+**The §43 prediction was wrong on both halves.** v8 does not beat the control
+on any benchmark — it is *below* it on all three, each inside noise. And the
+control does not sit at v1: it is below v1 on all three, with HumanEval at
+−4.2. The pre-registered falsifier (v8 below v1 on HumanEval) fired at −5.4.
+
+### What the control isolates
+
+The two arms differ only in which 330 prompts. Both lost to v1 by similar
+amounts, so **continuing from v1's checkpoint with a second LoRA pass on 330
+more verified samples degrades all three benchmarks regardless of what the
+samples are.** Prompt-level error-conditioning did not help; if anything it
+cost another point, inside noise. The damage is the second pass.
+
+That is the sharpest statement yet of something every run since v2 has hinted
+at: **v1 is a sharp optimum.** Nine of nine comparable deltas across v8 and
+its control are negative, joining v2/v3/v4/v7's twelve of fifteen.
+
+### The wall-clock split is real and unexplained
+
+| | MMLU | TruthfulQA | HumanEval |
+|---|---:|---:|---:|
+| v8 vs v1 | +6% | +12% | +12% |
+| **v8-control vs v1** | **+46%** | **+80%** | **+75%** |
+
+The control — random prompts — became dramatically slower to answer; the
+failure arm barely did. Same recipe, same base, same steps, same cap; only the
+prompts differ. One candidate: the failure arm's traces are, by selection,
+the ones a 35B *did* finish on hard problems and that fit under 2,048 tokens —
+a sample biased toward clean termination — while the random arm's traces are
+not. It is the one thing error-conditioning visibly did. It is also possible
+the oMLX server was loaded during the control run; a +46–80% swing is larger
+than any previous run-to-run noise, but that cannot be ruled out from here.
+Recorded, not claimed.
+
+### What eight runs now establish
+
+| axis | runs | outcome |
+|---|---:|---|
+| data composition | v2 v3 v4 | fails |
+| training objective (forward KL) | v5 | fails worst |
+| the filter | v6 | no supply |
+| adapter capacity | v7 | no effect |
+| **error-conditioned prompts, continued from v1** | **v8 + control** | **fails; the continuation itself costs** |
+
+Prompt-level on-policy selection is closed. The reviewer's list (§43) still
+has untried items — token-level GKD with skew KL and termination masking,
+preference KD, quantization-aware self-distillation, full-parameter updates —
+but v8 adds a constraint on all of them: **any method that starts from v1 and
+trains further has to first beat the ~1–4 point tax that a second pass appears
+to impose**, or it has to train from the stock base and re-earn v1's gains from
+scratch. Neither is cheap, and the prior after eight runs is poor.
+
+### One finding from the yield, worth keeping regardless
+
+On prompts a 9B fails, the 35B code teacher verified on 29% and **did not
+terminate on 38%** even at 4,608 tokens — against 73% verified on random
+prompts from the same pool. The termination failure is not specific to the
+quantized 9B. Added to docs/TERMINATION.md.

@@ -144,6 +144,15 @@ This is the same axis driven the wrong way, which is indirect support for the
 mechanism — and a caution that "distill from a stronger teacher" is not
 automatically safe for termination.
 
+**The teacher does it too.** Rolling the distilled 9B over a fresh
+4,974-prompt pool and sending only its 1,247 failures to the 35B teachers: the
+code teacher verified on **29%** of those and **failed to terminate on 38%**
+even after budget escalation to 4,608 tokens — against **73%** verified on
+random prompts from the same pool under the same teacher and verifier. On the
+problems a quantized 9B cannot finish, a 4-bit 35B frequently cannot finish
+either. The failure is not specific to the small model; it is a property of
+hard problems under a budget, and quantization moves the threshold.
+
 **A control that changed nothing.** Doubling adapter capacity (rank 32 → 64,
 byte-identical data, every other hyperparameter held) left accuracy flat within
 one standard error *and* left wall clock normal: 13,319 s on MMLU against
