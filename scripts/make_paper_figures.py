@@ -80,11 +80,13 @@ def fig_ladder() -> None:
             ("oQ8", "Ornith-1.5-9B-MLX-oQ8", C["stock"]), ("bf16", "Ornith-1.5-9B-MLX", C["bf16"]),
             ("distilled oQ4", "Ornith-1.5-9B-MLX-distil-oQ4", C["v1"])]
     fig, ax = plt.subplots(figsize=(4.6, 3.0))
+    offsets = {"oQ8": (0.15, -0.9), "distilled oQ4": (0.15, 0.5), "bf16": (-0.6, 0.5)}
     for name, key, col in spec:
         m = BASE[key]["mmlu"]
         x, y = m["seconds"] / 3600, 100 * m["accuracy"]
         ax.scatter(x, y, c=col, s=48, zorder=3, edgecolor="white", linewidth=0.5)
-        ax.annotate(name, (x, y), (x + 0.15, y + 0.4), fontsize=7, color=col)
+        dx, dy = offsets.get(name, (0.15, 0.4))
+        ax.annotate(name, (x, y), (x + dx, y + dy), fontsize=7, color=col)
     ax.set_xlabel("wall clock for 1,000 MMLU questions (hours, oMLX)")
     ax.set_ylabel("MMLU accuracy (%)")
     ax.set_title("The 3-bit build is slower than the 4-bit build, and worse")
@@ -112,7 +114,7 @@ def fig_halt() -> None:
         ax.text(x - w / 2, p + 1.5, f"{p}\n({t} trunc.)", ha="center", fontsize=6.5)
         ax.text(x + w / 2, f + 1.5, f"{f}\n(+{f - p})", ha="center", fontsize=6.5, color=C["forced"])
     ax.axhline(145, color=C["bf16"], linewidth=0.8, linestyle="--")
-    ax.text(len(labels) - 0.5, 146.5, "bf16 parent, 4,096", ha="right", fontsize=6.5, color=C["bf16"])
+    ax.text(-0.45, 146.5, "bf16 parent, 4,096", ha="left", fontsize=6.5, color=C["bf16"])
     ax.set_xticks(list(xs)); ax.set_xticklabels(labels)
     ax.set_ylabel("HumanEval problems solved (of 164)")
     ax.set_ylim(100, 164)
@@ -142,7 +144,7 @@ def fig_runs() -> None:
     ax.set_xticks(range(len(runs))); ax.set_xticklabels([r[0] for r in runs])
     ax.set_ylabel("delta vs v1 (points)")
     ax.set_title("Every run after v1, against v1 (oMLX). v5: MMLU only.")
-    ax.legend(frameon=False, ncol=3, loc="lower left")
+    ax.legend(frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.18))
     ax.grid(axis="y", alpha=0.25, linewidth=0.5)
     fig.tight_layout()
     fig.savefig(OUT / "fig_runs.pdf")
