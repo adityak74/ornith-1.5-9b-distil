@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Budget forcing on the same weights, our harness, reserve $N=256$. \emph{Plain}: standard decoding under the budget. \emph{Forced}: two-phase decoding; items still inside \texttt{<think>} at the phase-1 cap have the block closed for them and receive the reserve to answer. No item receives more than the budget in total.}
+\label{tab:forcing}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lllrrrrr}
+\toprule
+Model & Benchmark & Budget & Plain & Trunc. & Forced & Forced $\to$ correct & $\Delta$ \\
+\midrule
+v1 & HumanEval & 2{,}048 & 130/164 (79.3) & 24 & 142/164 (\textbf{86.6}) & 12 of 29 & +12 \\
+v1 & HumanEval & 4{,}096 & 138/164 (84.2) & 19 & 144/164 (\textbf{87.8}) & 6 of 18 & +6 \\
+stock oQ4 & HumanEval & 4{,}096 & \multicolumn{5}{l}{\emph{pending}} \\
+v1 & MMLU$_{250}$ & 3{,}072 & \multicolumn{5}{l}{\emph{pending}} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
