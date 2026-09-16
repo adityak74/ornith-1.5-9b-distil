@@ -23,6 +23,7 @@
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 \emergencystretch=2em
 
+\newcommand{\HALT}{\textsc{HALT}}
 \newcommand{\Student}{Ornith-1.5-9B}
 \newcommand{\oQ}{\texttt{oQ4}}
 \newcommand{\RepoURL}{\url{https://github.com/adityak74/ornith-1.5-9b-distil}}
@@ -30,8 +31,8 @@
 % Headline forcing number for the abstract; Table~\ref{tab:forcing} has the full set.
 \newcommand{\Forcinghighlight}{+7.3 points of HumanEval at a 2{,}048-token budget and +3.6 at 4{,}096}
 
-\title{Quantization Breaks Stopping Before It Breaks Reasoning:\\
-Diagnosing and Repairing Termination Failure in a 4-bit Reasoning Model}
+\title{\HALT{}: Quantization Breaks Stopping Before It Breaks Reasoning\\
+\large Diagnosing and Repairing Termination Failure in a 4-bit Reasoning Model with a Harness-Applied Limit on Thinking}
 
 \author{%
   Aditya Karnam Gururaj Rao\\
@@ -64,9 +65,10 @@ costs this model is not reasoning ability but the ability to \emph{stop}.  The
 4-bit build fails to reach an answer on 24\% of HumanEval problems its parent
 finishes, 22 of the 28 problems distillation recovered were budget exhaustions,
 and the effect reproduces as wall clock on a harness with no truncation penalty.
-The ninth attempt followed from that diagnosis and needed no training at all:
-budget forcing---closing the reasoning block at the decode budget and letting
-the model answer---recovers \Forcinghighlight{} on the same quantized weights,
+The ninth attempt followed from that diagnosis and needed no training at all.
+\HALT{}, a Harness-Applied Limit on Thinking---close the reasoning block at the
+decode budget and let the model answer---recovers \Forcinghighlight{} on the
+same quantized weights,
 and a model forced to stop at 2{,}048 tokens outperforms the same model allowed
 4{,}096.  We conclude that termination is a decoding-time property before it is
 a weights property, that any benchmark of a reasoning model that does not
@@ -100,10 +102,11 @@ multiply.  The same bf16 weights score 82.3\% or 88.4\% on HumanEval depending
 only on whether the budget is 2{,}048 or 4{,}096 tokens.
 
 Once the failure is named, the cheapest repair is obvious: stop the model for
-it.  Budget forcing \citep{muennighoff2025s1}---closing the reasoning block when
-the budget is nearly spent and letting the model commit---is a decoder change,
-not a training run.  It is the ninth thing we tried and, per token of budget,
-the best.
+it.  We call the result \HALT{}, a Harness-Applied Limit on Thinking: the
+closing half of budget forcing \citep{muennighoff2025s1}, applied as a
+two-phase decoder that closes the reasoning block when the budget is nearly
+spent and lets the model commit.  It is a decoder change, not a training run.
+It is the ninth thing we tried and, per token of budget, the best.
 
 \paragraph{Contributions.}
 \begin{enumerate}[leftmargin=1.5em]
@@ -112,9 +115,9 @@ the best.
     HumanEval at identical size and bit width.
   \item A diagnosis (\S\ref{sec:mechanism}): quantization damages termination
     more than reasoning, evidenced six ways, including in the 35B teacher.
-  \item A decoding-side repair (\S\ref{sec:forcing}): budget forcing on the same
-    weights, with the finding that stopping \emph{earlier} than the model would
-    stop itself improves accuracy.
+  \item A decoding-side repair (\S\ref{sec:forcing}): \HALT{}, a harness-applied
+    limit on thinking, on the same weights, with the finding that stopping
+    \emph{earlier} than the model would stop itself improves accuracy.
   \item Eight controlled negative results (\S\ref{sec:negative}), including a
     randomised control showing that continued training from the best checkpoint
     is itself harmful, and evidence that the teacher cannot supply the one
@@ -318,14 +321,15 @@ same teacher and verifier.  On the problems a quantized 9B cannot finish, a
 small model; it is a property of hard problems under a budget, and
 quantization moves the threshold.
 
-\section{Repairing it at decode time: budget forcing}
+\section{Repairing it at decode time: \HALT{}}
 \label{sec:forcing}
 
 If the failure is stopping, the cheapest test is to stop the model for it.
-Following s1 \citep{muennighoff2025s1}, when the reasoning block has not closed
-by the time the budget is nearly spent, we close it---appending a one-line
-commit phrase and \texttt{</think>}---and allow a reserved number of tokens for
-the answer.  Concretely, decoding runs in two phases: $B-N$ tokens, then $N$
+\HALT{} (Harness-Applied Limit on Thinking) is the closing half of budget
+forcing \citep{muennighoff2025s1}: when the reasoning block has not closed by
+the time the budget is nearly spent, the harness closes it---appending a
+one-line commit phrase and \texttt{</think>}---and allows a reserved number of
+tokens for the answer.  Concretely, decoding runs in two phases: $B-N$ tokens, then $N$
 more for anything that hit the first cap, with \texttt{</think>} forced only for
 items still inside the block.  No item receives more than $B$ tokens in total.
 One implementation detail mattered: an earlier version took the reserve out of
@@ -335,15 +339,15 @@ diff caught it where the aggregate did not.
 \input{tables_forcing}
 
 Table~\ref{tab:forcing} gives the result.  Two observations stand out.  First,
-\textbf{the distilled model forced at 2{,}048 tokens outperforms the same model
-allowed 4{,}096}---half the budget, more correct answers.  Forcing is not only
+\textbf{the distilled model under \HALT{} at 2{,}048 tokens outperforms the
+same model allowed 4{,}096 without it}---half the budget, more correct answers.  Forcing is not only
 recovering truncations; it is stopping the model before longer reasoning turns
 into wrong answers.  Second, in a 24-item pilot, a problem the model reasoned on
 to $\approx$2{,}050 tokens and answered \emph{wrong} was answered \emph{right}
 when cut at 1{,}792: past some point, continued reasoning has negative value
-and the model does not detect it.  Wall clock is unchanged by forcing.
+and the model does not detect it.  Wall clock is unchanged.
 
-This was the ninth thing we tried.  It is a two-phase change to the decoder,
+\HALT{} was the ninth thing we tried.  It is a two-phase change to the decoder,
 it generalises to any model with this failure mode including the stock build
 we would have shipped without distillation, and it needed no training.
 
@@ -555,7 +559,7 @@ per-item evaluation records and a 45-section decision log are at \RepoURL{}.
 \texttt{benchmarks/baseline.json} holds every number in this paper with its
 measurement date and harness; \texttt{scripts/make\_paper\_tables.py}
 regenerates every table in this paper from those files.
-\texttt{odistil eval --force-budget N} reproduces \S\ref{sec:forcing}.
+\texttt{odistil eval --force-budget N} reproduces \HALT{} (\S\ref{sec:forcing}).
 
 \bibliography{references}
 \bibliographystyle{plainnat}
