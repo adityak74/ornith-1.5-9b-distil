@@ -267,6 +267,16 @@ Mean generation (tokens) & 1{,}721 & \textbf{1{,}414} \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{fig_truncation.pdf}
+\caption{The paper in one plot.  Every HumanEval measurement our harness has made on all 164
+items, placed by the fraction of problems on which the model never reached an answer.  Bit
+width does not order the points; truncation does.  Stars are \HALT{} runs on the same weights
+as the circle or square of the same colour.}
+\label{fig:truncation}
+\end{figure}
+
 \subsection{It is not a scoring artefact}
 
 The natural objection is that a harness which penalises truncation will of
@@ -282,6 +292,16 @@ property of the model and not of the scoring.
 \subsection{The quantization ladder}
 
 \input{tables_ladder}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.7\textwidth]{fig_ladder.pdf}
+\caption{The quantization ladder (Table~\ref{tab:ladder}) as accuracy against wall clock for the
+same 1{,}000 MMLU questions.  The 3-bit build has fewer bits to multiply than the 4-bit build and
+takes 2.2$\times$ as long, because it generates more tokens; the distilled 4-bit build is both the
+most accurate and the fastest.}
+\label{fig:ladder}
+\end{figure}
 
 Table~\ref{tab:ladder} is the strongest single piece of evidence and the one
 with the clearest caveat.  The 3-bit build has fewer bits than the 4-bit build,
@@ -338,7 +358,17 @@ diff caught it where the aggregate did not.
 
 \input{tables_forcing}
 
-Table~\ref{tab:forcing} gives the result.  Two observations stand out.  First,
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\textwidth]{fig_halt.pdf}
+\caption{\HALT{} on the same weights (Table~\ref{tab:forcing}).  Grey: plain decoding under
+the budget, with the number of problems truncated before answering.  Red: two-phase decoding
+with a 256-token reserve; no item receives more total budget.  Dashed: the bf16 parent at
+4{,}096 on the same harness.}
+\label{fig:halt}
+\end{figure}
+
+Table~\ref{tab:forcing} and Figure~\ref{fig:halt} give the result.  Two observations stand out.  First,
 \textbf{the distilled model under \HALT{} at 2{,}048 tokens outperforms the
 same model allowed 4{,}096 without it}---half the budget, more correct answers.  Forcing is not only
 recovering truncations; it is stopping the model before longer reasoning turns
@@ -356,7 +386,16 @@ we would have shipped without distillation, and it needed no training.
 
 \input{tables_runs}
 
-Table~\ref{tab:runs} lists every run after v1.  Each moved one variable, each
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\textwidth]{fig_runs.pdf}
+\caption{Every completed run after v1, as its delta against v1 on each benchmark (oMLX).
+Twenty-one of twenty-four deltas are below zero and none is above it beyond noise.  v5 was
+abandoned after MMLU.}
+\label{fig:runs}
+\end{figure}
+
+Table~\ref{tab:runs} and Figure~\ref{fig:runs} list every run after v1.  Each moved one variable, each
 had a prediction recorded before measurement, and each was measured on oMLX
 under the protocol of Table~\ref{tab:main}.  Across the six completed
 comparable runs, \textbf{21 of 24 benchmark deltas against v1 are negative and
