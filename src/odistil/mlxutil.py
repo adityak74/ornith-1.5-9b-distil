@@ -18,6 +18,23 @@ class Completion:
     tokens: int
     seconds: float
     truncated: bool = False  # ran out of budget before closing </think>
+    forced: bool = False     # reasoning was cut off by budget forcing and an answer requested
+
+
+# Budget forcing (Muennighoff et al., s1, arXiv:2501.19393): when the reasoning
+# block has not closed by the time the budget is nearly spent, close it for
+# the model and let it answer with what it has. Our finding is that the 4-bit
+# student's dominant failure is not stopping -- 24% of stock HumanEval never
+# reaches an answer -- so this tests whether the truncated attempts were
+# recoverable, at the harness, with no training at all.
+FORCE_STR = "\n\nI am out of thinking budget and will commit to my best answer now.\n</think>\n\n"
+
+
+def _unclosed(raw: str, pre_opened: bool) -> bool:
+    """True when the reasoning block never closed (the budget ran out inside it)."""
+    if "</think>" in raw:
+        return False
+    return pre_opened or "<think>" in raw
 
 
 def opens_think(rendered_prompt: str) -> bool:
@@ -106,8 +123,18 @@ def generate_batch(
     top_p: float = 0.95,
     think: bool = True,
     batch_size: int = 8,
+    force_budget: int | None = None,
 ) -> list[Completion]:
-    """Batched generation; falls back to a serial loop on older mlx-lm."""
+    """Batched generation; falls back to a serial loop on older mlx-lm.
+
+    `force_budget=N` splits the budget into two phases: `max_tokens - N`, then
+    N more for anything that hit the phase-1 cap. An item still inside <think>
+    at the cap has the block closed for it (FORCE_STR) before continuing; an
+    item that had already closed it and was mid-answer simply continues. No
+    item receives more than `max_tokens` in total, and none loses budget it
+    was using well -- the first version cut the reserve out of every item's
+    answer, which cost a correct solution in the smoke test.
+    """
     import time
 
     from mlx_lm.sample_utils import make_sampler
@@ -115,6 +142,8 @@ def generate_batch(
     model, tokenizer = load(model_path)
     texts = [render(tokenizer, p, system, think) for p in prompts]
     sampler = make_sampler(temp=temp, top_p=top_p)
+    reserve = force_budget or 0
+    phase1 = max_tokens - reserve if reserve else max_tokens
 
     try:
         from mlx_lm import batch_generate as _batch
@@ -124,9 +153,15 @@ def generate_batch(
             from mlx_lm import generate as _generate
 
             t0 = time.time()
-            raw = _generate(model, tokenizer, prompt=t, max_tokens=max_tokens, sampler=sampler, verbose=False)
+            raw = _generate(model, tokenizer, prompt=t, max_tokens=phase1, sampler=sampler, verbose=False)
+            forced = False
+            if reserve and len(tokenizer.encode(raw)) >= phase1 - 2:  # hit the phase-1 cap
+                if _unclosed(raw, opens_think(t)):
+                    raw = raw + FORCE_STR
+                    forced = True
+                raw += _generate(model, tokenizer, prompt=t + raw, max_tokens=reserve, sampler=sampler, verbose=False)
             a, th = split_think(raw, opens_think(t))
-            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), time.time() - t0, not a))
+            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), time.time() - t0, not a, forced))
         return out
 
     out: list[Completion] = []
@@ -135,12 +170,27 @@ def generate_batch(
         t0 = time.time()
         # batch_generate takes token ids, not strings.
         ids = [tokenizer.encode(t) for t in chunk]
-        res = _batch(model, tokenizer, prompts=ids, max_tokens=max_tokens, sampler=sampler, verbose=False)
+        res = _batch(model, tokenizer, prompts=ids, max_tokens=phase1, sampler=sampler, verbose=False)
+        raws = list(res.texts if hasattr(res, "texts") else res)
+        forced = [False] * len(chunk)
+        if reserve:
+            # second pass for everything that hit the phase-1 cap; only the
+            # items still inside <think> get the block closed for them
+            stuck = [j for j, raw in enumerate(raws) if len(tokenizer.encode(raw)) >= phase1 - 2]
+            if stuck:
+                for j in stuck:
+                    if _unclosed(raws[j], opens_think(chunk[j])):
+                        raws[j] = raws[j] + FORCE_STR
+                        forced[j] = True
+                cont_ids = [tokenizer.encode(chunk[j] + raws[j]) for j in stuck]
+                res2 = _batch(model, tokenizer, prompts=cont_ids, max_tokens=reserve, sampler=sampler, verbose=False)
+                conts = list(res2.texts if hasattr(res2, "texts") else res2)
+                for j, c in zip(stuck, conts, strict=True):
+                    raws[j] = raws[j] + c
         dt = (time.time() - t0) / max(len(chunk), 1)
-        raws = res.texts if hasattr(res, "texts") else list(res)
-        for rendered, raw in zip(chunk, raws, strict=True):
+        for rendered, raw, fc in zip(chunk, raws, forced, strict=True):
             a, th = split_think(raw, opens_think(rendered))
-            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), dt, not a))
+            out.append(Completion(a, th, raw, len(tokenizer.encode(raw)), dt, not a, fc))
     return out
 
 

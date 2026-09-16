@@ -33,6 +33,7 @@ def run_task(
     temp: float = 0.0,
     batch_size: int = 8,
     limit: int | None = None,
+    force_budget: int | None = None,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     detail = out_dir / f"{task.name}.jsonl"
@@ -53,6 +54,7 @@ def run_task(
                 temp=temp,
                 think=think,
                 batch_size=batch_size,
+                force_budget=force_budget,
             )
             for it, comp in zip(chunk, comps, strict=True):
                 rec = {
@@ -60,6 +62,7 @@ def run_task(
                     "correct": bool(task.score(it, comp.text)),
                     "output": comp.text,
                     "truncated": comp.truncated,
+                    "forced": comp.forced,
                     "think_chars": len(comp.think or ""),
                     "tokens": comp.tokens,
                     "seconds": round(comp.seconds, 2),
@@ -81,12 +84,17 @@ def run_task(
         "correct": correct,
         "accuracy": round(correct / max(len(recs), 1), 4),
         "truncated": sum(r.get("truncated", False) for r in recs),
+        "forced": sum(r.get("forced", False) for r in recs),
+        "forced_correct": sum(r.get("forced", False) and r["correct"] for r in recs),
         "seconds": round(sum(r["seconds"] for r in recs) or time.time() - t0, 1),
         "think": think,
         "max_tokens": max_tokens,
+        "force_budget": force_budget,
     }
     trunc = summary["truncated"]
     note = f"  [{trunc} truncated before answering -- raise eval.max_tokens]" if trunc else ""
+    if force_budget:
+        note += f"  [forced {summary['forced']}, of which {summary['forced_correct']} correct]"
     print(f"\n[{task.name}] {summary['accuracy']:.1%} ({correct}/{len(recs)}){note}")
     return summary
 
@@ -154,8 +162,11 @@ def run(
     limit: int | None = None,
     sample: int | None = None,
     tag: str | None = None,
+    force_budget: int | None = None,
+    max_tokens: int | None = None,
 ) -> Path:
     ecfg = cfg.distill["eval"]
+    force_budget = force_budget if force_budget is not None else ecfg.get("force_budget")
     model_path = cfg.model_ref(model_ref)
     tag = tag or model_ref.replace("/", "_").replace(":", "-")
     out_dir = cfg.path("eval", tag)
@@ -171,6 +182,8 @@ def run(
         budget = ecfg["max_tokens"]
         if isinstance(budget, dict):
             budget = budget.get(name, budget["default"])
+        if max_tokens:
+            budget = max_tokens
         summaries.append(
             run_task(
                 model_path,
@@ -180,6 +193,7 @@ def run(
                 max_tokens=budget,
                 temp=ecfg["temp"],
                 limit=limit,
+                force_budget=force_budget,
             )
         )
 

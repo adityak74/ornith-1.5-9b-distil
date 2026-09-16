@@ -133,7 +133,8 @@ def cmd_eval(args) -> int:
     from .eval.runner import run
 
     run(_cfg(args), args.model, benchmarks=args.benchmark, limit=args.limit,
-        sample=args.sample, tag=args.tag)
+        sample=args.sample, tag=args.tag, force_budget=args.force_budget,
+        max_tokens=args.max_tokens)
     return 0
 
 
@@ -221,6 +222,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--sample", type=int,
                    help="seeded random subset per benchmark -- use this for iteration runs")
     s.add_argument("--tag", help="name for the results directory")
+    s.add_argument("--force-budget", type=int,
+                   help="budget forcing: reserve N tokens, close <think> for any item still "
+                        "reasoning at max_tokens-N and let it answer")
+    s.add_argument("--max-tokens", type=int, help="override the per-benchmark budget")
     s.set_defaults(fn=cmd_eval)
 
     s = sub.add_parser("report", help="comparison table vs the baselines")

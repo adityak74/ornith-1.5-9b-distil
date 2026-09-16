@@ -1614,3 +1614,45 @@ On prompts a 9B fails, the 35B code teacher verified on 29% and **did not
 terminate on 38%** even at 4,608 tokens — against 73% verified on random
 prompts from the same pool. The termination failure is not specific to the
 quantized 9B. Added to docs/TERMINATION.md.
+
+## 45. Budget forcing: the termination finding, tested at the harness
+
+If the 4-bit student's dominant failure is *stopping* (§31, docs/TERMINATION.md),
+then the cheapest possible test is to stop it for it. Budget forcing
+(Muennighoff et al., s1, arXiv:2501.19393): when the reasoning block has not
+closed by the time the budget is nearly spent, close it and let the model
+answer with what it has. No training; a harness change.
+
+Implemented as two phases in `generate_batch`: `max_tokens − N`, then N more
+for anything that hit the cap. Items still inside `<think>` get the block
+closed for them (FORCE_STR) before continuing; items that had closed it and
+were mid-answer simply continue. No item receives more than `max_tokens` in
+total. `odistil eval --force-budget N`.
+
+**The first version had a real flaw**, caught by the per-item diff: the
+reserve was taken out of *every* item's budget, so one item that had finished
+reasoning and was writing its code was cut at phase 1 and scored wrong. The
+per-item file is what surfaced it; the aggregate (+1) looked fine.
+
+### Smoke: 24 seeded HumanEval items, v1 at oQ4, 2,048-token budget
+
+| | correct | truncated | forced | forced → correct |
+|---|---:|---:|---:|---:|
+| plain | 19 / 24 | 2 | — | — |
+| **forced, N=256** | **21 / 24** | 0 | 3 | 2 |
+
+Both truncations were forced; one recovered. The third forced item had *not*
+truncated under plain decoding — it reasoned to ~2,050 tokens and answered
+wrong — and cut at 1,792 it committed to the right answer. n=1, but it is the
+shape the finding predicts: past some point, more reasoning is not helping.
+
+Zero regressions after the fix. Wall clock unchanged (253 s vs 251 s).
+
+### What this does and does not show
+
+It shows the mechanism is real and recoverable at the harness: on a 24-item
+sample, forcing turned two wrong answers into right ones and cost nothing. It
+does not yet show the size of the effect at the deployment budget of 4,096, or
+on MMLU where truncated multiple-choice answers are already partly recoverable,
+or whether the gain holds at n=164. That is the next measurement, and it needs
+no training: full HumanEval plain vs forced at 2,048 and at 4,096.

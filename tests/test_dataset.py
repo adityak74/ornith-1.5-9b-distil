@@ -92,3 +92,17 @@ def test_rollout_triage_splits_failures_and_same_size_control(tmp_path):
     control = [json.loads(line)["id"] for line in (tmp_path / "ctl" / "prompts.jsonl").open()]
     assert failures == ["p0", "p3", "p6", "p9"]
     assert len(control) == len(failures)
+
+
+def test_unclosed_think_detection():
+    from odistil.mlxutil import FORCE_STR, _unclosed, split_think
+
+    assert _unclosed("some reasoning with no close", pre_opened=True)
+    assert not _unclosed("reasoning</think>\nAnswer: B", pre_opened=True)
+    assert _unclosed("<think>opened here", pre_opened=False)
+    assert not _unclosed("plain answer", pre_opened=False)
+    # a forced continuation parses as a real answer, not a truncation
+    raw = "half a thought" + FORCE_STR + "Answer: C"
+    answer, think = split_think(raw, pre_opened=True)
+    assert answer == "Answer: C"
+    assert think.startswith("half a thought")
