@@ -29,7 +29,7 @@
 \newcommand{\RepoURL}{\url{https://github.com/adityak74/ornith-1.5-9b-distil}}
 \newcommand{\PRURL}{\url{https://github.com/ml-explore/mlx-lm/pull/1870}}
 % Headline forcing number for the abstract; Table~\ref{tab:forcing} has the full set.
-\newcommand{\Forcinghighlight}{+7.3 points of HumanEval at a 2{,}048-token budget and +3.6 at 4{,}096}
+\newcommand{\Forcinghighlight}{+10.4 points of HumanEval on the stock quantized build and +7.3 on the distilled one at a 2{,}048-token budget}
 
 \title{\HALT{}: Quantized Reasoning Models Don't Stop,\\
 and a Harness-Applied Limit on Thinking Repairs Them}
@@ -368,7 +368,13 @@ with a 256-token reserve; no item receives more total budget.  Dashed: the bf16 
 \label{fig:halt}
 \end{figure}
 
-Table~\ref{tab:forcing} and Figure~\ref{fig:halt} give the result.  Two observations stand out.  First,
+Table~\ref{tab:forcing} and Figure~\ref{fig:halt} give the result.  On the \textbf{stock} \oQ{}
+build---no distillation at all---\HALT{} takes HumanEval from 118 to 135 of 164, \textbf{+10.4
+points}, recovering 17 of the 40 items it forced.  Distillation took the same weights from 118 to
+138 on this harness; a two-phase decoder alone recovers most of that.  On MMLU, where a truncated
+multiple-choice trace is often already salvageable (\S\ref{sec:mechanism}), the effect is
+correspondingly smaller: all 10 truncations recovered, 3 of them to a correct answer, +1.2 points.
+Two further observations stand out.  First,
 \textbf{the distilled model under \HALT{} at 2{,}048 tokens outperforms the
 same model allowed 4{,}096 without it}---half the budget, more correct answers.  Forcing is not only
 recovering truncations; it is stopping the model before longer reasoning turns
