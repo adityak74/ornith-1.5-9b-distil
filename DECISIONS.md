@@ -1656,3 +1656,57 @@ does not yet show the size of the effect at the deployment budget of 4,096, or
 on MMLU where truncated multiple-choice answers are already partly recoverable,
 or whether the gain holds at n=164. That is the next measurement, and it needs
 no training: full HumanEval plain vs forced at 2,048 and at 4,096.
+
+## 46. v9: self-distillation of the HALT traces
+
+§45 and the paper showed the harness fix is worth +10.4 HumanEval on stock oQ4
+and +7.3 on v1, with no training. v9 asks whether that can be moved into the
+weights: roll the student under HALT, keep every verified-correct trace, train
+on it. The traces the harness closed are the interesting ones — they end early
+and still verify, which is the behaviour quantization removed (§45, paper §5).
+
+### Why this loop and not the others considered
+
+- On-policy self-generated data has no distribution shift and no teacher
+  swap. v8's teacher failed to terminate on 38% of the student's code
+  failures (§43); the student's own correct traces cannot have that problem.
+- Synthetic prompt generation was set aside: the v8 pool (5,000 prompts,
+  disjoint from v1) is unused as training data, and teacher-written MCQ has
+  no verifier, which the rejection-sampling invariant forbids.
+- Preference training on (short correct, long truncated) pairs is the natural
+  follow-up but needs a DPO trainer on MLX that does not exist here yet.
+
+### Design
+
+- **Rollout:** v1 at oQ4 over runs/v8pool, `max_tokens 1536`, `force_budget
+  256` — 1,280 tokens of reasoning, then `</think>` forced for anything still
+  inside the block. The paper's 2,048 + 256 setting would put most forced rows
+  over the 2,048 training cap (prompt + trace) and the dataset stage would
+  reject them as too_long; 1,536 keeps them.
+- **Harvest** (`rollout.mode: harvest`, new): every correct roll becomes a
+  teacher-shaped row in `teacher/self.jsonl`, tagged `forced`. The harness
+  sentence ("I am out of thinking budget…") is stripped; the row closes
+  `</think>` where the harness closed it, so the model learns to stop, not to
+  say it was stopped.
+- **Mix:** self rows + v1's teacher traces (copied into `teacher/`), same
+  40/25/35 domain mix, `max_seq_len 2048` with the chunkwise path.
+- **Base:** the stock bf16 student, one pass, v1's rank/layers/lr. Not v1's
+  fused checkpoint — six second-pass runs on it went negative on 21 of 24
+  deltas (§44). This means the v1 half is re-filtered at 2,048 rather than
+  1,024; v4 is the nearest reference for that (length-unbiased, ≈ v1).
+- **Control** (`configs/v9-control.yaml`): identical, forced rows dropped,
+  same rollouts. The one variable is whether the forced traces are in the mix.
+
+### Go/no-go, set before the rollout started
+
+1. After harvest: fewer than ~150 forced-correct code rows means too little
+   forced data to learn from; do not train.
+2. After training, in our harness at 2,048 on HumanEval, plain decoding:
+   v1 = 130/164 (HALT: 142). v9 needs ≥ 136 and a clearly lower truncation
+   count than v1. If truncation does not move, stop after one generation and
+   report it beside v8.
+3. If it moves: roll v9 under HALT, retrain as v10, stop when truncation
+   stops falling.
+
+Smoke (16 pool prompts): 14/16 correct, 1 forced (wrong), harvest wrote 14
+rows and copied both v1 teacher files. Full rollout started 2026-09-17.
