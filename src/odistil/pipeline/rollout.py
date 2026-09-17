@@ -22,16 +22,24 @@ Without the control, a gain from error-conditioned data is confounded with
 
 The student is rolled out at its deployed bit width. Its oQ4 failures include
 the ones quantization introduced, which are exactly the ones worth repairing.
+
+`rollout.mode: harvest` (v9) inverts the selection: the student decodes under
+HALT (`force_budget`) and every *verified-correct* trace becomes a training
+row in teacher/self.jsonl, tagged `forced` when the harness closed the
+reasoning for it. That is self-distillation of the harness fix: the traces
+that end early and still verify are exactly the behaviour quantization lost.
+`harvest.forced: false` drops the forced rows, which is the control arm.
 """
 
 from __future__ import annotations
 
 import json
 import random
+import shutil
 from pathlib import Path
 
 from ..config import Config
-from ..mlxutil import generate_batch
+from ..mlxutil import FORCE_SENTENCE, generate_batch
 from .dataset import _verify
 from .teach import SYSTEM
 
@@ -83,6 +91,7 @@ def run(cfg: Config, limit: int | None = None) -> Path:
                 temp=0.0,
                 think=True,
                 batch_size=bs,
+                force_budget=rcfg.get("force_budget"),
             )
             for rec, comp in zip(chunk, comps, strict=True):
                 ok, why = _verify({**rec, "answer": comp.text}, dcfg)
@@ -92,16 +101,90 @@ def run(cfg: Config, limit: int | None = None) -> Path:
                     "kind": rec["kind"],
                     "correct": bool(ok),
                     "truncated": comp.truncated,
+                    "forced": comp.forced,
                     "tokens": comp.tokens,
                     "why": why,
-                    # kept so a verifier fix can re-score without regenerating
+                    # kept so a verifier fix can re-score without regenerating,
+                    # and so `harvest` can turn a correct roll into a training row
                     "answer": comp.text,
+                    "think": comp.think,
                 }) + "\n")
                 f.flush()
             n_done += len(chunk)
             print(f"  {n_done}/{len(todo)}", end="\r", flush=True)
 
-    return triage(cfg)
+    return harvest(cfg) if rcfg.get("mode") == "harvest" else triage(cfg)
+
+
+def _load_rollouts(cfg: Config) -> list[dict]:
+    path = Path(cfg.distill["rollout"].get("rollouts") or cfg.path("rollouts.jsonl"))
+    with path.open() as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def strip_force(think: str | None) -> str | None:
+    """Drop the harness's budget sentence so the model learns to *stop*, not to
+    recite that it was stopped. The </think> that followed it stays, because
+    `_target` re-adds it: the training row closes the block right where the
+    harness closed it."""
+    if not think:
+        return think
+    think = think.rstrip()
+    if think.endswith(FORCE_SENTENCE):
+        think = think[: -len(FORCE_SENTENCE)].rstrip()
+    return think
+
+
+def harvest(cfg: Config) -> Path:
+    """Verified-correct rollouts -> teacher/self.jsonl, in the teacher record
+    shape so `dataset` re-verifies and packs them like any other trace."""
+    rcfg = cfg.distill["rollout"]
+    hcfg = rcfg.get("harvest") or {}
+    keep_forced = hcfg.get("forced", True)
+    with Path(rcfg["pool"]).open() as f:
+        prompts = {r["id"]: r for r in (json.loads(line) for line in f if line.strip())}
+    rolls = _load_rollouts(cfg)
+
+    out = cfg.path("teacher", "self.jsonl")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stats: dict[str, dict[str, int]] = {}
+    n_kept = 0
+    with out.open("w") as f:
+        for r in rolls:
+            k = stats.setdefault(r["kind"], {"n": 0, "natural": 0, "forced": 0, "dropped_forced": 0})
+            k["n"] += 1
+            if not r["correct"]:
+                continue
+            if r.get("forced"):
+                if not keep_forced:
+                    k["dropped_forced"] += 1
+                    continue
+                k["forced"] += 1
+            else:
+                k["natural"] += 1
+            src = prompts[r["id"]]
+            f.write(json.dumps({
+                **src,
+                "think": strip_force(r.get("think")),
+                "answer": r["answer"],
+                "forced": bool(r.get("forced")),
+                "source": "self",
+            }) + "\n")
+            n_kept += 1
+
+    print("\n[harvest] verified-correct rollouts kept as training rows:")
+    for kind, k in sorted(stats.items()):
+        print(f"  {kind:<10} natural {k['natural']:4d}   forced {k['forced']:4d}   "
+              f"dropped(forced) {k['dropped_forced']:4d}   (n={k['n']})")
+    print(f"[harvest] {n_kept} rows -> {out}")
+
+    # the other half of the mix: the teacher traces the base run learned from,
+    # copied so `dataset` sees one teacher/ directory and one provenance
+    for extra in hcfg.get("include_teacher") or []:
+        dst = out.parent / Path(extra).name
+        shutil.copyfile(extra, dst)
+        print(f"[harvest] included {extra} -> {dst}")
+    return out
 
 
 def triage(cfg: Config) -> Path:

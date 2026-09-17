@@ -58,6 +58,10 @@ def cmd_rollout(args) -> int:
 
     if args.triage_only:
         triage(_cfg(args))
+    elif args.harvest_only:
+        from .pipeline.rollout import harvest
+
+        harvest(_cfg(args))
     else:
         run(_cfg(args), limit=args.limit)
     return 0
@@ -175,6 +179,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--limit", type=int, help="first N pool prompts (debugging)")
     s.add_argument("--triage-only", action="store_true",
                    help="re-split arms from existing rollouts without generating")
+    s.add_argument("--harvest-only", action="store_true",
+                   help="rebuild teacher/self.jsonl from existing rollouts without generating")
     s.set_defaults(fn=cmd_rollout)
 
     s = sub.add_parser("hedge", help="stage 2b: re-ask rejected open-ended traces")

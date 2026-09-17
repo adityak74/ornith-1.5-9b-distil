@@ -106,3 +106,47 @@ def test_unclosed_think_detection():
     answer, think = split_think(raw, pre_opened=True)
     assert answer == "Answer: C"
     assert think.startswith("half a thought")
+
+
+def test_rollout_harvest_keeps_correct_rows_and_strips_force_sentence(tmp_path):
+    import json
+
+    from odistil.config import Config
+    from odistil.mlxutil import FORCE_SENTENCE
+    from odistil.pipeline.rollout import harvest, strip_force
+
+    pool = tmp_path / "pool.jsonl"
+    with pool.open("w") as f:
+        for i in range(4):
+            f.write(json.dumps({"id": f"p{i}", "domain": "knowledge", "kind": "mcq", "prompt": "x", "gold": "A"}) + "\n")
+    out = tmp_path / "run"
+    out.mkdir()
+    rolls = [  # p0 natural-correct, p1 forced-correct, p2 wrong, p3 forced-wrong
+        {"id": "p0", "correct": True, "forced": False, "think": "reasoning", "answer": "A"},
+        {"id": "p1", "correct": True, "forced": True, "think": "cut off\n\n" + FORCE_SENTENCE, "answer": "A"},
+        {"id": "p2", "correct": False, "forced": False, "think": "r", "answer": "B"},
+        {"id": "p3", "correct": False, "forced": True, "think": "r", "answer": "B"},
+    ]
+    with (out / "rollouts.jsonl").open("w") as f:
+        for r in rolls:
+            f.write(json.dumps({**r, "domain": "knowledge", "kind": "mcq", "truncated": False, "tokens": 1, "why": ""}) + "\n")
+    extra = tmp_path / "code.jsonl"
+    extra.write_text(json.dumps({"id": "t0", "domain": "code", "kind": "code", "prompt": "y", "gold": {}, "answer": "z"}) + "\n")
+
+    cfg = Config.load(None, "configs/v9.yaml")
+    cfg.distill["out_dir"] = str(out)
+    cfg.distill["rollout"]["pool"] = str(pool)
+    cfg.distill["rollout"]["harvest"] = {"forced": True, "include_teacher": [str(extra)]}
+    harvest(cfg)
+    rows = {json.loads(line)["id"]: json.loads(line) for line in (out / "teacher" / "self.jsonl").open()}
+    assert set(rows) == {"p0", "p1"}
+    assert rows["p1"]["forced"] is True and rows["p1"]["think"] == "cut off"
+    assert rows["p0"]["forced"] is False and rows["p0"]["gold"] == "A"
+    assert (out / "teacher" / "code.jsonl").exists()
+
+    cfg.distill["rollout"]["harvest"] = {"forced": False}
+    harvest(cfg)
+    rows = [json.loads(line)["id"] for line in (out / "teacher" / "self.jsonl").open()]
+    assert rows == ["p0"]
+    assert strip_force(None) is None
+    assert strip_force("plain") == "plain"

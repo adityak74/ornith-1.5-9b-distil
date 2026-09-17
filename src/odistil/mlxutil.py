@@ -28,6 +28,8 @@ class Completion:
 # reaches an answer -- so this tests whether the truncated attempts were
 # recoverable, at the harness, with no training at all.
 FORCE_STR = "\n\nI am out of thinking budget and will commit to my best answer now.\n</think>\n\n"
+# the sentence alone, for stripping it back out of a trace before training on it
+FORCE_SENTENCE = FORCE_STR.strip().split("\n")[0]
 
 
 def _unclosed(raw: str, pre_opened: bool) -> bool:

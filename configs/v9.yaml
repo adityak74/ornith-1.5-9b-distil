@@ -1,0 +1,104 @@
+# v9 -- self-distillation of the HALT traces. The first run whose training
+# rows come from the student itself, decoded under the harness fix.
+#
+#   v8 pool -> v1 (oQ4) decodes under HALT -> verify -> keep every CORRECT trace,
+#   forced or not -> mix with v1's teacher traces -> one LoRA pass from the
+#   stock base -> fuse -> quantize -> eval
+#
+# The question: can the +7-10 HumanEval points HALT gives at decode time be
+# baked into the weights? Forced traces end early and still verify; training
+# on them teaches "commit when the budget is near", which is what quantization
+# broke (paper section 5). Trained from the STOCK base, not v1's fused
+# checkpoint: six second-pass runs on v1 went negative on 21 of 24 deltas
+# (DECISIONS.md 44), so that base is a known confound.
+#
+# The ONE variable against configs/v9-control.yaml is whether the forced
+# traces are in the mix. Stage order:
+#   rollout (mode: harvest) -> dataset -> train -> fuse -> quantize -> eval
+
+seed: 17
+out_dir: runs/v9
+
+prompts:
+  # unused: the pool is runs/v8pool (fresh, disjoint from v1 by construction)
+  knowledge:
+    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 1500, kind: mcq}
+  truthfulness:
+    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 600, kind: qa}
+  code:
+    - {hf: google-research-datasets/mbpp, config: full, split: train, n: 374, kind: code}
+
+rollout:
+  mode: harvest
+  pool: runs/v8pool/prompts.jsonl
+  student: /Volumes/SATECHI/.omlx/Ornith-1.5-9B-MLX-distil-oQ4   # v1 at its deployed bit width
+  batch_size: 8
+  # 1,280 tokens of reasoning, then a 256-token reserve with </think> forced
+  # for anything still thinking. Total output <= 1,536 so prompt + trace fits
+  # the 2,048 training cap; at the paper's 2,048 + 256 most forced rows would
+  # be rejected as too_long and the experiment would train on nothing.
+  max_tokens: {default: 1536}
+  force_budget: 256
+  harvest:
+    forced: true            # the treatment: keep the harness-closed traces
+    include_teacher:        # v1's verified teacher traces, the other half of the mix
+      - runs/v1/teacher/code.jsonl
+      - runs/v1/teacher/knowledge.jsonl
+
+teach:
+  batch_size: 16
+  think: true
+  keep_think_in_target: true
+  max_retries: 2
+
+dataset:
+  verify_mcq: true
+  verify_code: true
+  verify_qa: true
+  decontaminate_ngram: 13
+  max_seq_len: 2048      # forced rows are ~1.5k tokens by construction
+  valid_frac: 0.02
+  mix:
+    knowledge: 0.40
+    truthfulness: 0.25
+    code: 0.35
+
+train:
+  fine_tune_type: lora
+  # no `base`: train from the stock bf16 student, v1's recipe
+  num_layers: 16
+  rank: 32
+  scale: 16.0
+  dropout: 0.05
+  batch_size: 1
+  grad_accumulation_steps: 1
+  iters: 3200             # provisional; set to ~2 epochs once `dataset` reports the count
+  learning_rate: 3.0e-5
+  lr_schedule: cosine_decay
+  warmup: 150
+  max_seq_length: 2048
+  gdn_chunk: 64           # chunkwise gated-delta path; needed for 2048 to fit
+  grad_checkpoint: true
+  clear_cache_threshold: 8
+  steps_per_eval: 400
+  save_every: 400
+  mask_prompt: true
+
+quantize:
+  variants:
+    - {name: q8, bits: 8, group_size: 64}
+    - {name: q4, bits: 4, group_size: 64}
+  recipes:
+    oq4: null
+    oq3: null
+    oq2: null
+
+eval:
+  benchmarks: [mmlu, truthfulqa, humaneval]
+  mmlu_sample: 1000
+  think: true
+  max_tokens:
+    default: 2048
+    mmlu: 3072
+    humaneval: 4096
+  temp: 0.0
