@@ -8,3 +8,4 @@ data/
 models/
 *.safetensors
 .DS_Store
+arxiv-submission.zip
