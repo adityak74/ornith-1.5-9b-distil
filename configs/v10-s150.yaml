@@ -1,0 +1,86 @@
+# v10 -- preference training on termination. The first run with a NEGATIVE
+# example: the student's own trace that reasoned past the budget.
+#
+#   pairs:  chosen  = teacher trace that verified   (runs/v8/teacher, 512 verified)
+#           rejected = v1@oQ4's failed trace on the same prompt (runs/v9 rollouts)
+#   train:  DPO(beta) + sft * CE(chosen), LoRA over v1's fused bf16, reference = v1
+#        -> fuse -> quantize -> eval
+#
+# v1 is the anchor and the control: this is not a second SFT pass (six of those
+# went negative, DECISIONS.md 44) but a preference correction with v1 as the
+# reference policy. 459 pairs; 229 rejected traces are unterminated.
+# Go/no-go (harness, HumanEval @2048 plain): v1 = 130/164, 34 truncated.
+# v10 needs >= 136 with clearly fewer truncations. DECISIONS.md 49.
+
+seed: 17
+out_dir: runs/v10-s150   # the v10 step-150 adapter, before the margin blow-up
+
+prompts:            # unused; pairs come from finished runs
+  knowledge:
+    - {hf: cais/mmlu, config: all, split: auxiliary_train, n: 1500, kind: mcq}
+  truthfulness:
+    - {hf: mandarjoshi/trivia_qa, config: rc.nocontext, split: train, n: 600, kind: qa}
+  code:
+    - {hf: google-research-datasets/mbpp, config: full, split: train, n: 374, kind: code}
+
+pairs:
+  teacher:
+    - runs/v8/teacher/code.jsonl
+    - runs/v8/teacher/knowledge.jsonl
+  rollouts:                             # first file wins per id
+    - runs/v9/rollouts.jsonl            # mcq/qa @1536, code @2304 (1,016 of 1,300)
+    - runs/v9/rollouts-code-1536.jsonl  # the remaining code
+
+pref:
+  beta: 0.1
+  sft_weight: 0.2       # RPO term on the chosen trace; DPO alone lowers both sides
+  max_grad_norm: 1.0
+
+teach:
+  batch_size: 16
+  think: true
+  keep_think_in_target: true
+  max_retries: 2
+
+dataset:
+  verify_mcq: true
+  verify_code: true
+  verify_qa: true
+  decontaminate_ngram: 13
+  max_seq_len: 3072      # 386 pairs; at 2,048 the code pairs drop to 47
+  valid_frac: 0.05
+  mix: {knowledge: 0.40, truthfulness: 0.25, code: 0.35}
+
+train:
+  fine_tune_type: lora
+  base: runs/v1/fused     # reference policy and adapter base
+  num_layers: 16
+  rank: 32
+  scale: 16.0
+  dropout: 0.0            # the no-grad passes must be deterministic (pref_train)
+  batch_size: 1
+  grad_accumulation_steps: 1
+  iters: 720              # 2 epochs over 360 train pairs
+  learning_rate: 1.0e-5   # DPO on LoRA: a third of the SFT rate
+  lr_schedule: cosine_decay
+  warmup: 50
+  max_seq_length: 3072
+  gdn_chunk: 64
+  grad_checkpoint: true
+  clear_cache_threshold: 8
+  steps_per_eval: 150
+  save_every: 150
+  mask_prompt: true
+
+quantize:
+  variants:
+    - {name: q8, bits: 8, group_size: 64}
+    - {name: q4, bits: 4, group_size: 64}
+  recipes: {oq4: null, oq3: null, oq2: null}
+
+eval:
+  benchmarks: [mmlu, truthfulqa, humaneval]
+  mmlu_sample: 1000
+  think: true
+  max_tokens: {default: 2048, mmlu: 3072, humaneval: 4096}
+  temp: 0.0

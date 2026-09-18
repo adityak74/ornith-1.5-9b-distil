@@ -1771,3 +1771,65 @@ is v9. Not run.
 
 Cost: ~15 h of decode across the two rolls. No model produced. Rollouts kept
 at runs/v9/rollouts.jsonl and rollouts-code-1536.jsonl.
+
+## 49. v10: preference training on termination pairs. Negative.
+
+v9 (§46–48) failed for lack of positive examples. v10 used the abundant
+negative one instead: the student's own trace that reasoned past the budget.
+
+### Design
+
+- **Pairs** (`odistil pairs`, new): chosen = a teacher trace that verified
+  (runs/v8/teacher), rejected = v1@oQ4's failed trace on the same prompt
+  (runs/v9 rollouts, the harness sentence stripped and the block left
+  unclosed). 378 pairs at a 3,072 cap: code 99, mcq 107, qa 172; 159 rejected
+  traces unterminated.
+- **Loss** (`odistil pref-train`, new): sigmoid DPO, β 0.1, reference = v1
+  fused, plus 0.2 × CE on the chosen trace (RPO). LoRA rank 32 / top-16 over
+  v1 fused, lr 1e-5 cosine, 720 steps (2 epochs), dropout 0, grad clip 1.0.
+- **Engineering:** mlx-lm has no preference trainer. mlx-lm-lora
+  (Goekdeniz-Guelmez) has one, but it scores both sequences and a resident
+  reference model in one graph with dense float32 cross-entropy, none of
+  which fits a 9B at 3,072 on 64 GB. Ours factorises the DPO gradient
+  (∇L = −β σ(−Δ)(∇log π_c − ∇log π_r)) into one no-grad forward and two
+  single-sequence backward passes, with the reference precomputed once and
+  cached. Peak 34.8 GB on the longest pair. The gated-delta layer must stay
+  in train mode throughout: its eval-mode Metal kernel has no vjp and differs
+  from the chunkwise path by ~0.003 nat/token, which biased Δ at init by
+  0.24 until reference and policy shared one path.
+
+### Training
+
+Loss reached 0.00 by step 50 and the train margin grew to +25–30 by step
+400; validation margin +9 to +13 from step 150 on, accuracy 1.00 throughout.
+The pairs are trivially separable — a teacher trace against an unterminated
+student trace — so DPO learns them at once and then only widens the margin.
+
+### Result (our harness, HumanEval, 2,048 plain, oQ4)
+
+| | correct | truncated |
+|---|---:|---:|
+| v1 | 130 | 34 |
+| v10 step 720 | 123 | 30 |
+| v10 step 150 | 116 | 39 |
+
+Per item against v1, step 720: 12 correct→truncated, 8 correct→wrong, 6
+truncated→correct, 7 wrong→correct. Mean output length unchanged (1,139 →
+1,112 tokens). Step 150: 17 correct→truncated, 7 truncated→correct. This is
+churn, not a shift in when the model stops: gains and losses are symmetric
+and the early checkpoint is worse, so it is not over-optimisation either.
+Both fail criterion 2 of §46. No oMLX run.
+
+### Reading
+
+Sequence-level DPO on (terminated, unterminated) pairs moves the sum of
+log-probs over whole traces; the behaviour we want is a decision at one
+position, the `</think>` token when the reasoning has reached an answer.
+Nothing in the pair localises the credit there, so the adapter buys margin
+by perturbing the whole trace, and at oQ4 that perturbation lands as noise.
+A fix would need token-level credit (a termination-position loss, or
+on-policy RL with the verifier as reward and length as cost), which is a
+different experiment. Preference training as tried here is closed.
+
+Cost: ~6 h training + 2 × 1.5 h fuse/quantize/eval. Adapters and per-item
+records kept under runs/v10 and runs/v10-s150.
