@@ -1738,3 +1738,36 @@ forced MCQ items and a third of the forced QA items.
 2,048 at 41.9 GB). The 1,536 code rows are kept at
 `runs/v9/rollouts-code-1536.jsonl`. MCQ/QA rows stand. Criterion 1 is
 re-applied to the 2,304 code roll; under 150 there is the negative.
+
+## 48. v9 result: negative at the data stage. Stopped before training.
+
+Code re-rolled at 2,304 (2,048 + 256), stopped at 1,016 of 1,300 once the
+answer was clear (2026-09-18):
+
+| code budget | n | correct | forced | forced ∧ correct |
+|---|---:|---:|---:|---:|
+| 1,536 | 1,300 | 20.9% | 911 | 27 |
+| 2,304 | 1,016 | 33.6% | 551 | **7** |
+
+Raising the budget fixed accuracy and *lowered* the forced-correct yield.
+Projected to the full pool that is ~9 rows against the 150 the design
+required (§46). v9's hypothesis — that HALT-closed code traces exist in
+enough quantity to distill the stopping behaviour into the weights — is
+false on this pool at this model. There is nothing to train on.
+
+Why the paper's +12 on HumanEval does not carry over: forcing recovers items
+that had reached an answer and failed to stop. On HumanEval at 2,048 that
+was 12 of v1's 34 truncations. On KodCode, harder by construction, the items
+still reasoning at 2,048 have not reached one; forced, 544 of 551 fail the
+tests. HALT is a decode-time gain on the benchmark distribution and does not
+manufacture training data on a harder one.
+
+What the rollout did yield: 3,390 verified-correct MCQ/QA self-traces at
+1,536 (112 of them forced) and ~340 code at 2,304. A run on those would test
+"does on-policy self-distillation help at all", which v8-control already
+answered (no second pass has beaten v1, §44), or "does early stopping
+transfer from MCQ/QA to code", a new hypothesis with a weak prior. Neither
+is v9. Not run.
+
+Cost: ~15 h of decode across the two rolls. No model produced. Rollouts kept
+at runs/v9/rollouts.jsonl and rollouts-code-1536.jsonl.

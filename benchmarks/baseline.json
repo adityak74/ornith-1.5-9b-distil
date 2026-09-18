@@ -293,6 +293,9 @@
     "seconds": 4880.1
    },
    "note": "v8-control, oMLX 2026-09-16. Same recipe as v8 on 330 RANDOM prompts from the same pool. Also below v1 on all three; slightly above v8 but within noise. Wall clock +46-80% vs v1 (unexplained; v8 was +6-12%). Not released."
+  },
+  "Ornith-1.5-9B-MLX-distil-v9-oQ4": {
+   "note": "v9, self-distillation of HALT traces. Not trained: the rollout yielded 27 (at 1,536) and ~9 projected (at 2,304) forced-correct code traces against the 150 the design required. Negative at the data stage; DECISIONS.md 46-48."
   }
  },
  "targets": {
