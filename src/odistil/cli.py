@@ -6,6 +6,8 @@
     odistil teach   [--teacher code]   stage 2: generate teacher traces
     odistil rollout                    stage 1b: roll the student out, keep its failures
     odistil hedge                      stage 2b: recover verified abstentions
+    odistil pairs                      stage 3b: preference pairs (teacher verified vs student failed)
+    odistil pref-train [--check]       stage 4c: DPO on termination pairs
     odistil dataset                    stage 3: verify + decontaminate + mix
     odistil train   [--resume]         stage 4: LoRA distillation
     odistil fuse                       stage 5: fuse adapters -> bf16 checkpoint
@@ -94,6 +96,24 @@ def cmd_logits(args) -> int:
     cfg = _cfg(args)
     for split in ("train", "valid"):
         extract(cfg, split=split, top_k=args.top_k)
+    return 0
+
+
+def cmd_pairs(args) -> int:
+    from .pipeline.pairs import build
+
+    build(_cfg(args), skip_decontam=args.skip_decontam)
+    return 0
+
+
+def cmd_pref(args) -> int:
+    from .pipeline.pref_train import sanity_check, train
+
+    cfg = _cfg(args)
+    if args.check:
+        sanity_check(cfg)
+        return 0
+    train(cfg)
     return 0
 
 
@@ -204,6 +224,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--alpha", type=float, help="weight on hard-target CE (default from config)")
     s.add_argument("--check", action="store_true", help="one batch through the loss, then stop")
     s.set_defaults(fn=cmd_distill)
+
+    s = sub.add_parser("pairs", help="stage 3b: (teacher verified, student failed) pairs")
+    s.add_argument("--skip-decontam", action="store_true", help="smoke tests only")
+    s.set_defaults(fn=cmd_pairs)
+
+    s = sub.add_parser("pref-train", help="stage 4c: preference training on termination pairs")
+    s.add_argument("--check", action="store_true", help="one pair through one step, then stop")
+    s.set_defaults(fn=cmd_pref)
 
     s = sub.add_parser("fuse", help="stage 5: fuse adapters into the trained-on base")
     s.add_argument("--dequantize", action="store_true",

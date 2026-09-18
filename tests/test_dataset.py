@@ -150,3 +150,37 @@ def test_rollout_harvest_keeps_correct_rows_and_strips_force_sentence(tmp_path):
     assert rows == ["p0"]
     assert strip_force(None) is None
     assert strip_force("plain") == "plain"
+
+
+def test_pairs_rejected_text_and_build(tmp_path):
+    import json
+
+    from odistil.config import Config
+    from odistil.mlxutil import FORCE_SENTENCE
+    from odistil.pipeline.pairs import build, rejected_text
+
+    assert rejected_text({"think": "r", "answer": "B", "truncated": False, "forced": False}) == "<think>\nr\n</think>\n\nB"
+    assert rejected_text({"think": "r\n\n" + FORCE_SENTENCE, "answer": "B", "forced": True}) == "<think>\nr"
+    assert rejected_text({"think": "r", "answer": "", "truncated": True}) == "<think>\nr"
+
+    teacher = tmp_path / "t.jsonl"
+    with teacher.open("w") as f:
+        for i, ans in enumerate(["A", "B", "A"]):   # p1's teacher is wrong -> unverified
+            f.write(json.dumps({"id": f"p{i}", "domain": "knowledge", "kind": "mcq", "prompt": f"q{i}",
+                                "gold": "A", "think": "t", "answer": ans}) + "\n")
+    rolls = tmp_path / "r.jsonl"
+    with rolls.open("w") as f:
+        f.write(json.dumps({"id": "p0", "correct": False, "truncated": True, "think": "x", "answer": ""}) + "\n")
+        f.write(json.dumps({"id": "p1", "correct": False, "truncated": True, "think": "x", "answer": ""}) + "\n")
+        f.write(json.dumps({"id": "p2", "correct": True, "truncated": False, "think": "x", "answer": "A"}) + "\n")
+    cfg = Config.load(None, "configs/v10.yaml")
+    cfg.distill["out_dir"] = str(tmp_path / "run")
+    cfg.distill["pairs"] = {"teacher": [str(teacher)], "rollouts": [str(rolls)]}
+    cfg.distill["dataset"]["valid_frac"] = 0.0
+    train, valid = build(cfg, skip_decontam=True)
+    rows = [json.loads(line) for line in train.open()] + [json.loads(line) for line in valid.open()]
+    assert [r["id"] for r in rows] == ["p0"]
+    assert rows[0]["rejected"] == "<think>\nx" and rows[0]["rejected_unterminated"] is True
+    assert rows[0]["chosen"].startswith("<think>\nt\n</think>")
+    stats = json.loads((tmp_path / "run" / "train" / "pairs-stats.json").read_text())
+    assert stats["teacher_unverified"] == 1 and stats["no_failure"] == 1
