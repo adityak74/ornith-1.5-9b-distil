@@ -33,11 +33,13 @@ rollout:
   pool: runs/v8pool/prompts.jsonl
   student: /Volumes/SATECHI/.omlx/Ornith-1.5-9B-MLX-distil-oQ4   # v1 at its deployed bit width
   batch_size: 8
-  # 1,280 tokens of reasoning, then a 256-token reserve with </think> forced
-  # for anything still thinking. Total output <= 1,536 so prompt + trace fits
-  # the 2,048 training cap; at the paper's 2,048 + 256 most forced rows would
-  # be rejected as too_long and the experiment would train on nothing.
-  max_tokens: {default: 1536}
+  # Reasoning budget, then a 256-token reserve with </think> forced for
+  # anything still thinking. MCQ/QA at 1,536 (1,280 + 256) fit the 2,048
+  # training cap. Code was first rolled at 1,536 too (runs/v9/rollouts-code-
+  # 1536.jsonl): 20.9% correct against 49% at 4,096, 911/1,300 forced, 27
+  # forced-correct -- the budget, not forcing, was the limit (DECISIONS.md
+  # 47). Re-rolled at the paper's 2,048 + 256 with max_seq_len raised to 3,072.
+  max_tokens: {default: 1536, code: 2304}
   force_budget: 256
   harvest:
     forced: true            # the treatment: keep the harness-closed traces
@@ -56,7 +58,7 @@ dataset:
   verify_code: true
   verify_qa: true
   decontaminate_ngram: 13
-  max_seq_len: 2048      # forced rows are ~1.5k tokens by construction
+  max_seq_len: 3072      # forced code rows are ~2.3k tokens plus prompt
   valid_frac: 0.02
   mix:
     knowledge: 0.40
@@ -76,7 +78,7 @@ train:
   learning_rate: 3.0e-5
   lr_schedule: cosine_decay
   warmup: 150
-  max_seq_length: 2048
+  max_seq_length: 3072
   gdn_chunk: 64           # chunkwise gated-delta path; needed for 2048 to fit
   grad_checkpoint: true
   clear_cache_threshold: 8

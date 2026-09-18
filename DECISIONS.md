@@ -1710,3 +1710,31 @@ and still verify, which is the behaviour quantization removed (§45, paper §5).
 
 Smoke (16 pool prompts): 14/16 correct, 1 forced (wrong), harvest wrote 14
 rows and copied both v1 teacher files. Full rollout started 2026-09-17.
+
+## 47. v9 rollout at 1,536: the yield check fails, and the budget is why
+
+Full pool, v1 at oQ4, 1,280 tokens of reasoning + 256 reserve (2026-09-17/18):
+
+| kind | n | correct | forced | forced ∧ correct |
+|---|---:|---:|---:|---:|
+| mcq | 2,878 | 91.8% | 152 | 71 |
+| qa | 796 | 59.8% | 137 | 41 |
+| code | 1,300 | **20.9%** | 911 | **27** |
+
+Criterion 1 in §46 asked for ~150 forced-correct code rows; there are 27.
+That is a no-go on the criterion as written, but the criterion assumed the
+reasoning budget was adequate and it was not: the same student solved 49.2%
+of this pool's code at 4,096 (§43) and 20.9% here, with 911 of 1,300 items
+hitting the cap. HALT recovers items that reasoned to a conclusion and failed
+to stop; at 1,280 tokens most code items have not reached one. The budget was
+set to keep prompt + trace under the 2,048 training cap, which was the wrong
+constraint to protect.
+
+MCQ and QA behave as the paper predicts: forcing recovers about half of the
+forced MCQ items and a third of the forced QA items.
+
+**Action:** code re-rolled at the paper's setting, 2,048 + 256, with
+`max_seq_len` and `max_seq_length` raised to 3,072 (chunkwise path; v7 fit
+2,048 at 41.9 GB). The 1,536 code rows are kept at
+`runs/v9/rollouts-code-1536.jsonl`. MCQ/QA rows stand. Criterion 1 is
+re-applied to the 2,304 code roll; under 150 there is the negative.
