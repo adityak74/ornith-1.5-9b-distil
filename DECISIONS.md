@@ -1912,3 +1912,17 @@ decision without choosing the position for the model. HALT at a cliff
 was the coarse version of the same fix.
 
 Next: MMLU-250 @ 3,072 with the ramp from 2,048, then the paper v2.
+
+## 52. MMLU confirms; the probe series is closed
+
+v1 @ oQ4, MMLU-250 @ 3,072, ramp from 2,048 at 0.02: **210 / 0** against
+plain 206 / 10 and hard HALT 209. 206 C→C, 4 T→C, 6 T→W, no regressions.
+Smaller than HumanEval because MMLU truncates 4% of items, not 15%; same
+shape. Three benchmarks × builds, zero regressions in every one.
+
+Series summary (all decode-time, same weights): repetition penalty and
+sampling do nothing; a hard limit recovers truncations; a soft ramp
+recovers the same truncations plus a handful of wrong-by-overthinking items,
+with no cliff to place. It supersedes hard HALT as the recommended fix and
+goes into the paper as v2, with v9/v10 as the two training-side negatives
+that bound it.
