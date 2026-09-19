@@ -115,6 +115,29 @@ def generate_one(
     return Completion(answer, thought, raw, len(tokenizer.encode(raw)), dt, not answer)
 
 
+def _processors(tokenizer, decode: dict) -> list:
+    """Logits processors for the decode knobs; applied per sequence by mlx-lm."""
+    import mlx.core as mx
+    from mlx_lm.sample_utils import make_logits_processors
+
+    procs = list(make_logits_processors(repetition_penalty=decode.get("repetition_penalty")))
+    if decode.get("think_bias"):
+        start, slope = decode["think_bias"]
+        end_id = tokenizer.encode("</think>", add_special_tokens=False)
+        assert len(end_id) == 1, end_id
+        end_id = end_id[0]
+
+        def think_bias(tokens, logits):
+            n = tokens.shape[-1]
+            if n <= start or bool(mx.any(tokens == end_id)):
+                return logits
+            bias = mx.zeros(logits.shape[-1], dtype=logits.dtype).at[end_id].add(slope * (n - start))
+            return logits + bias
+
+        procs.append(think_bias)
+    return procs
+
+
 def generate_batch(
     model_path: str,
     prompts: Iterable[str],
@@ -126,8 +149,15 @@ def generate_batch(
     think: bool = True,
     batch_size: int = 8,
     force_budget: int | None = None,
+    decode: dict | None = None,
 ) -> list[Completion]:
     """Batched generation; falls back to a serial loop on older mlx-lm.
+
+    `decode` holds optional decode-time knobs (DECISIONS.md 50):
+      repetition_penalty: float      mlx-lm's processor over the last 20 tokens
+      think_bias: [start, slope]     add slope * (n_generated - start) to the
+                                     </think> logit while still reasoning --
+                                     a soft, gradual form of HALT
 
     `force_budget=N` splits the budget into two phases: `max_tokens - N`, then
     N more for anything that hit the phase-1 cap. An item still inside <think>
@@ -144,6 +174,7 @@ def generate_batch(
     model, tokenizer = load(model_path)
     texts = [render(tokenizer, p, system, think) for p in prompts]
     sampler = make_sampler(temp=temp, top_p=top_p)
+    processors = _processors(tokenizer, decode or {})
     reserve = force_budget or 0
     phase1 = max_tokens - reserve if reserve else max_tokens
 
@@ -172,7 +203,8 @@ def generate_batch(
         t0 = time.time()
         # batch_generate takes token ids, not strings.
         ids = [tokenizer.encode(t) for t in chunk]
-        res = _batch(model, tokenizer, prompts=ids, max_tokens=phase1, sampler=sampler, verbose=False)
+        res = _batch(model, tokenizer, prompts=ids, max_tokens=phase1, sampler=sampler, verbose=False,
+                     logits_processors=processors)
         raws = list(res.texts if hasattr(res, "texts") else res)
         forced = [False] * len(chunk)
         if reserve:

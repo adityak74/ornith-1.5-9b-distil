@@ -1702,8 +1702,8 @@ and still verify, which is the behaviour quantization removed (§45, paper §5).
 1. After harvest: fewer than ~150 forced-correct code rows means too little
    forced data to learn from; do not train.
 2. After training, in our harness at 2,048 on HumanEval, plain decoding:
-   v1 = 130/164 (HALT: 142). v9 needs ≥ 136 and a clearly lower truncation
-   count than v1. If truncation does not move, stop after one generation and
+   v1 = 130/164, 24 truncated (HALT: 142). v9 needs ≥ 136 and a clearly
+   lower truncation count than v1. If truncation does not move, stop after one generation and
    report it beside v8.
 3. If it moves: roll v9 under HALT, retrain as v10, stop when truncation
    stops falling.
@@ -1809,15 +1809,16 @@ student trace — so DPO learns them at once and then only widens the margin.
 
 | | correct | truncated |
 |---|---:|---:|
-| v1 | 130 | 34 |
+| v1 | 130 | 24 |
 | v10 step 720 | 123 | 30 |
 | v10 step 150 | 116 | 39 |
 
 Per item against v1, step 720: 12 correct→truncated, 8 correct→wrong, 6
 truncated→correct, 7 wrong→correct. Mean output length unchanged (1,139 →
-1,112 tokens). Step 150: 17 correct→truncated, 7 truncated→correct. This is
-churn, not a shift in when the model stops: gains and losses are symmetric
-and the early checkpoint is worse, so it is not over-optimisation either.
+1,112 tokens). Step 150: 17 correct→truncated, 7 truncated→correct. Both
+checkpoints truncate *more* than v1 (30 and 39 against 24). This is churn
+plus a drift toward longer traces, not a shift toward stopping; the early
+checkpoint is worse, so it is not over-optimisation either.
 Both fail criterion 2 of §46. No oMLX run.
 
 ### Reading

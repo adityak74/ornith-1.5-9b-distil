@@ -9,7 +9,7 @@
 # v1 is the anchor and the control: this is not a second SFT pass (six of those
 # went negative, DECISIONS.md 44) but a preference correction with v1 as the
 # reference policy. 459 pairs; 229 rejected traces are unterminated.
-# Go/no-go (harness, HumanEval @2048 plain): v1 = 130/164, 34 truncated.
+# Go/no-go (harness, HumanEval @2048 plain): v1 = 130/164, 24 truncated.
 # v10 needs >= 136 with clearly fewer truncations. DECISIONS.md 49.
 
 seed: 17

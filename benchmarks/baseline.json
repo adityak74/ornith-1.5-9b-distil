@@ -298,7 +298,7 @@
    "note": "v9, self-distillation of HALT traces. Not trained: the rollout yielded 27 (at 1,536) and ~9 projected (at 2,304) forced-correct code traces against the 150 the design required. Negative at the data stage; DECISIONS.md 46-48."
   },
   "Ornith-1.5-9B-MLX-distil-v10-oQ4": {
-   "note": "v10, DPO+RPO on (teacher verified, student unterminated) pairs over v1. Harness only: HumanEval@2048 123/164 (30 truncated) vs v1 130 (34); step-150 checkpoint 116 (39). Symmetric churn, no termination shift. Not run on oMLX; not released. DECISIONS.md 49."
+   "note": "v10, DPO+RPO on (teacher verified, student unterminated) pairs over v1. Harness only: HumanEval@2048 123/164 (30 truncated) vs v1 130 (24); step-150 checkpoint 116 (39). Symmetric churn, more truncation than v1, no termination shift. Not run on oMLX; not released. DECISIONS.md 49."
   }
  },
  "targets": {

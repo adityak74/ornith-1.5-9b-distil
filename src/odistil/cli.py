@@ -156,9 +156,15 @@ def cmd_package(args) -> int:
 def cmd_eval(args) -> int:
     from .eval.runner import run
 
+    decode = {}
+    if args.rep_penalty:
+        decode["repetition_penalty"] = args.rep_penalty
+    if args.think_bias:
+        start, slope = args.think_bias.split(":")
+        decode["think_bias"] = [int(start), float(slope)]
     run(_cfg(args), args.model, benchmarks=args.benchmark, limit=args.limit,
         sample=args.sample, tag=args.tag, force_budget=args.force_budget,
-        max_tokens=args.max_tokens)
+        max_tokens=args.max_tokens, temp=args.temp, decode=decode)
     return 0
 
 
@@ -260,6 +266,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="budget forcing: reserve N tokens, close <think> for any item still "
                         "reasoning at max_tokens-N and let it answer")
     s.add_argument("--max-tokens", type=int, help="override the per-benchmark budget")
+    s.add_argument("--temp", type=float, help="override the sampling temperature")
+    s.add_argument("--rep-penalty", type=float, help="repetition penalty (mlx-lm, 20-token window)")
+    s.add_argument("--think-bias", help="START:SLOPE -- bias the </think> logit by SLOPE per token past START")
     s.set_defaults(fn=cmd_eval)
 
     s = sub.add_parser("report", help="comparison table vs the baselines")

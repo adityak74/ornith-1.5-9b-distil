@@ -34,6 +34,7 @@ def run_task(
     batch_size: int = 8,
     limit: int | None = None,
     force_budget: int | None = None,
+    decode: dict | None = None,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     detail = out_dir / f"{task.name}.jsonl"
@@ -55,6 +56,7 @@ def run_task(
                 think=think,
                 batch_size=batch_size,
                 force_budget=force_budget,
+                decode=decode,
             )
             for it, comp in zip(chunk, comps, strict=True):
                 rec = {
@@ -64,6 +66,9 @@ def run_task(
                     "truncated": comp.truncated,
                     "forced": comp.forced,
                     "think_chars": len(comp.think or ""),
+                    # the end of the reasoning, so a truncation can be read
+                    # as a loop or as reasoning still in progress
+                    "think_tail": (comp.think or "")[-1500:] if comp.truncated else "",
                     "tokens": comp.tokens,
                     "seconds": round(comp.seconds, 2),
                     "meta": it.meta,
@@ -164,6 +169,8 @@ def run(
     tag: str | None = None,
     force_budget: int | None = None,
     max_tokens: int | None = None,
+    temp: float | None = None,
+    decode: dict | None = None,
 ) -> Path:
     ecfg = cfg.distill["eval"]
     force_budget = force_budget if force_budget is not None else ecfg.get("force_budget")
@@ -191,9 +198,10 @@ def run(
                 out_dir,
                 think=ecfg["think"],
                 max_tokens=budget,
-                temp=ecfg["temp"],
+                temp=ecfg["temp"] if temp is None else temp,
                 limit=limit,
                 force_budget=force_budget,
+                decode=decode,
             )
         )
 
@@ -206,6 +214,9 @@ def run(
             merged[r["benchmark"]] = r
     for r in summaries:
         merged[r["benchmark"]] = r
+    for r in summaries:
+        r["temp"] = ecfg["temp"] if temp is None else temp
+        r["decode"] = decode or {}
     path.write_text(
         json.dumps({"model_ref": model_ref, "results": list(merged.values())}, indent=2)
     )
