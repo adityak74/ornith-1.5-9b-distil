@@ -181,10 +181,25 @@ rambling trace usually fails its verifier. Objectives that transfer the
 teacher's uncertainty transfer its hesitancy about stopping too, and a smaller
 student may not be able to carry it.
 
+**For anyone deploying one.** Repair it at decode time. A bias of
+`0.02 × (n − 1024)` on the `</think>` logit while the block is open takes the
+stock 4-bit build from 108 to 139 of 164 HumanEval problems at a 2,048-token
+budget and the distilled build from 130 to 147, with no item that was correct
+becoming wrong, and at 2,048 tokens the ramped model outscores the bf16 parent
+at 4,096. A hard two-phase limit (close the block at `B − N`, allow `N` to
+answer) recovers less (142 on the distilled build) and has a cliff to place.
+Two attempts to train the same behaviour into the weights failed
+(`DECISIONS.md` §46–49): self-distilling the harness-closed traces found too
+few of them, and preference training against the model's own unterminated
+traces churned without changing when it stops. The behaviour lives in the
+quantized forward pass, and the repair belongs in the decoder.
+
 **The honest limits of this.** One model family, one quantization scheme, one
 hardware target. The mechanism behind the 4-bit build's verbosity is not
 established here — this documents that it happens and that it dominates the
-measured damage, not why a coarser weight grid produces longer reasoning. Two
+measured damage, not why a coarser weight grid produces longer reasoning.
+The ramp result says the stop logit is depressed relative to continuing by an
+amount that grows with position; it does not say which modules do it. Two
 harnesses agreeing on direction while disagreeing by 15 points on the stock
 model's absolute score is itself a reason to treat any single number here as
 approximate.
@@ -199,7 +214,13 @@ odistil eval --model student:oq4 --benchmark humaneval   # truncation count is
                                                          # accuracy
 ```
 
-The runner records `truncated`, `tokens` and `seconds` per item in
+```bash
+odistil eval --model student:oq4 --benchmark humaneval --max-tokens 2048 --think-bias 1024:0.02   # soft HALT
+odistil eval --model student:oq4 --benchmark humaneval --max-tokens 2048 --force-budget 256      # hard HALT
+```
+
+The runner records `truncated`, `tokens`, `seconds`, and for truncated items
+the tail of the reasoning block, per item in
 `runs/<tag>/eval/<benchmark>.jsonl`. Per-benchmark budgets live under
 `eval.max_tokens` in the distill config; the finding in §5 above is reproduced
 by moving `humaneval` between 2048 and 4096 and re-running the same weights.

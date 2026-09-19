@@ -413,6 +413,26 @@ bf16's 47.3, and 26 s/iter against 10.** Dequantizing every pass costs more than
 smaller weights save, and the activation memory that dominates is bf16 either
 way.
 
+**v9, self-distillation of the harness-closed traces, found nothing to train
+on.** The idea was to roll v1 out under a hard stop, keep every
+verified-correct trace, and train on the ones the harness had closed, so the
+model learns to commit when the budget is near. At a 1,536-token budget 911 of
+1,300 KodCode items hit the cap and 27 of those verified; at 2,304, 551 hit it
+and 7 verified. Against a pre-registered floor of 150, nothing was trained
+(`DECISIONS.md` §46–48). HALT recovers items that reached an answer and did
+not stop; on a pool harder than HumanEval, items still reasoning at the budget
+mostly have not reached one.
+
+**v10, preference training against the model's own unterminated traces,
+churned.** 378 pairs of a verified teacher trace against v1's failed trace on
+the same prompt, sigmoid DPO with v1 as the reference plus a cross-entropy
+term, a three-pass step so a 3,072-token pair fits in 35 GB. The loss hit
+zero in 50 steps — the pairs are trivially separable — and the margin kept
+growing. HumanEval at 2,048: 123/164 with 30 truncated at the final
+checkpoint, 116 with 39 at step 150, against v1's 130 with 24; gains and
+losses symmetric across items, output length unchanged (§49). Sequence-level
+preference moves whole-trace likelihood; stopping is one token's decision.
+
 **Ollama/GGUF export doesn't work for this architecture.** Four real
 incompatibilities were fixed — architecture naming, transformers-v5 tensor
 prefixes, MLX storing conv1d as `(out, kernel, in)` where PyTorch expects
@@ -558,6 +578,38 @@ does not hedge) is the finding.
 
 ---
 
+## 7b. The result that came from small probes: soft HALT
+
+After v10 the method changed: many 30-minute probes on the same weights, all
+HumanEval at 2,048 in our harness, pick the direction that moves. Repetition
+penalty (128, 24 truncated against 130/24 plain) and sampling at 0.6 (122/28)
+do nothing, and the tails of the truncated traces say why: 2 of 24 loop, 14
+had a solution written inside the think block and kept checking it, 8 were
+reasoning. Truncation is not degeneration.
+
+The probe that moved is a bias of `slope × (n − start)` on the `</think>`
+logit while the block is open — HALT without the cliff. At `1024:0.02`:
+
+| build, benchmark, budget | plain | hard HALT | soft ramp | regressions |
+|---|---:|---:|---:|---:|
+| v1 oQ4, HumanEval, 2,048 | 130 (24 tr.) | 142 | **147** (0 tr.) | 0 |
+| stock oQ4, HumanEval, 2,048 | 108 (48 tr.) | — | **139** (0 tr.) | 0 |
+| v1 oQ4, MMLU-250, 3,072 | 206 (10 tr.) | 209 | **210** (0 tr.) | 0 |
+
+The sweep is a plateau (slope 0.02–0.04, start 768–1,280 all land 144–147;
+0.01 is too weak). The stock build at half the budget beats the distilled
+build decoded plainly at 4,096 (138), and the distilled build ramped beats
+its bf16 parent at 4,096 (145). Five of the distilled build's gains are items
+that reasoned past 1,024 tokens to a wrong answer and answer right when
+stopping is made cheaper. Mean output falls 1,139 → 1,085 tokens
+(`DECISIONS.md` §50–52).
+
+The reading, held together with v9 and v10: quantization depressed the stop
+logit relative to continuing by an amount that grows with position. A
+position-dependent bias restores the decision without making it; training on
+sequences cannot localise credit to that one token. The repair belongs in the
+decoder, and the paper's v2 leads with it.
+
 ## 8. Conclusions
 
 **Every axis available to a distillation recipe is now closed, by measurement
@@ -570,6 +622,8 @@ rather than by elimination.**
 | the filter | 1 | no supply: the teacher does not hedge (§5.4) |
 | adapter capacity | 1 | no effect; all deltas within 1 SE (§5.5) |
 | error-conditioned prompts, continued from v1 | 1 + control | both arms below v1; the continuation itself costs (§5.6) |
+| self-distillation of harness-closed traces | 1 | no supply: 27 then 7 forced-correct code traces (§5.7) |
+| preference training on (terminated, unterminated) pairs | 1 + early ckpt | churn, more truncation than v1 (§5.7) |
 
 Across v2, v3, v4, v7, v8 and its control — the six completed, directly
 comparable runs — **twenty-one of twenty-four benchmark deltas are negative
@@ -582,9 +636,13 @@ What is now established is narrower and better supported: within
 sequence-level KD under LoRA on this hardware, nothing tried — mixture,
 volume, length, objective, filter, capacity, or on-policy prompt selection —
 improves on v1, and continuing from v1 costs 1–4 points before any method
-gets to help. Untried items remain (token-level GKD with skew KL and
-termination masking; quantization-aware self-distillation, gated on first
-measuring v1-bf16; full-parameter updates), each now facing that tax.
+gets to help. Two further runs aimed at termination itself, v9 and v10, did
+not get past that bar either. What did move termination — by more than
+distillation did — is a decode-time ramp on the stop logit (§7b), which is
+where the recommendation now sits. Untried items remain (token-level GKD with
+skew KL and termination masking; verifier-reward RL, whose feasibility check
+found 59% of prompt groups with no correct sample; full-parameter updates),
+each facing that tax and each now competing with a fix that costs nothing.
 
 **v1 is the release**, and it is a good one: a one-time repair of what
 quantization broke — +5.5 MMLU and +3.0 HumanEval over the 4-bit model it
@@ -626,11 +684,14 @@ own capacity at 9B and 4.72 bits. No distillation recipe reaches it.
    (§5.3), the depth variant of v7 (§5.5), or a second continuation from v1
    without first accounting for the tax (§5.6).
 
-### Status, 16 September 2026
+### Status, 19 September 2026
 
 `Ornith-1.5-9B-MLX-distil-oQ4` is the release and the only distilled build
-left installed. The repository is public at `adityak74/ornith-1.5-9b-distil`
+left installed; decode it with `--think-bias 1024:0.02` (§7b). The paper's
+v2 (`paper/`) leads with the soft ramp and reports v9 and v10 as the two
+training-side negatives that bound it. The repository is public at `adityak74/ornith-1.5-9b-distil`
 with every run's adapters, fused checkpoints, teacher traces and evaluation
 records under `runs/`. Baseline and every run's numbers are in
 `benchmarks/baseline.json`, each measured on the same oMLX harness under the
-same protocol. This document and `DECISIONS.md` are complete through v8.
+same protocol. This document and `DECISIONS.md` are complete through v10 and
+the decode-time probe series (§46–52).

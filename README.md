@@ -88,6 +88,27 @@ The bf16 base scores 88.4% HumanEval, so the distilled oQ4 recovers most of the
 quantization loss. HumanEval is a real gain; MMLU and TruthfulQA move within
 noise at n=250.
 
+### Decode with HALT
+
+Most of what quantization costs this model is the ability to *stop* reasoning
+(`docs/TERMINATION.md`). The cheapest repair needs no training: a bias on the
+`</think>` logit that grows with position, so stopping gets steadily cheaper
+once reasoning has run long. Same weights, HumanEval at a 2,048-token budget:
+
+| build | plain | `--think-bias 1024:0.02` | regressions |
+|---|---:|---:|---:|
+| shipped oQ4 | 108 / 164 (48 truncated) | **139 / 164** (0) | 0 |
+| distilled oQ4 | 130 / 164 (24 truncated) | **147 / 164** (0) | 0 |
+
+```bash
+odistil eval --model student:oq4 --benchmark humaneval --max-tokens 2048 --think-bias 1024:0.02
+odistil eval --model student:oq4 --benchmark humaneval --max-tokens 2048 --force-budget 256   # the hard form
+```
+
+The ramp is inert before token 1,024 and after the block closes, so its worst
+case is plain decoding. `DECISIONS.md` §50–52 has the sweep; the paper has the
+full comparison.
+
 The mechanism shows up in every column: **truncations roughly halve**. The
 shipped oQ4 never reaches an answer on 24% of HumanEval problems, and 22 of the
 28 problems the distilled model gained were ones the shipped model ran out of
