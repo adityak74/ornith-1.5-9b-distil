@@ -604,8 +604,20 @@ that reasoned past 1,024 tokens to a wrong answer and answer right when
 stopping is made cheaper. Mean output falls 1,139 → 1,085 tokens
 (`DECISIONS.md` §50–52).
 
-The reading, held together with v9 and v10: quantization depressed the stop
-logit relative to continuing by an amount that grows with position. A
+Then the control that had to be run: the same ramp on the bf16 parent, on
+oQ3 and oQ8, and on the 35B teacher (`DECISIONS.md` §53). All gain — bf16 by
++17, the same as the distilled 4-bit build, and bf16 ramped at 2,048 (152)
+beats bf16 plain at 4,096 (145); the 35B by +8; oQ8 by +18; oQ3 by +32. From
+4 bits up the ramp recovers two thirds to four fifths of whatever truncated,
+one regression in 735 previously-correct items. So the repair is not for
+quantized models; it is for greedy reasoning under a finite budget, which
+every build here over-runs. Quantization raises how often (20 → 26 → 48 → 78
+truncations from bf16 down to 3 bits), which is why it showed up as the
+dominant quantization damage in §4.
+
+The reading, held together with v9 and v10: greedy decoding under a budget
+depresses the stop decision by an amount that grows with position, and
+quantization amplifies it. A
 position-dependent bias restores the decision without making it; training on
 sequences cannot localise credit to that one token. The repair belongs in the
 decoder, and the paper's v2 leads with it.

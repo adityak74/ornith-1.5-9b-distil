@@ -228,6 +228,38 @@ def sweep_table() -> str:
     ])
 
 
+def generality_table() -> str:
+    spec = [("oQ3", "p13-oq3-plain", "p14-oq3-bias1024-0.02"),
+            ("oQ4 (stock)", "p9-stock-plain", "p10-stock-bias1024-0.02"),
+            ("oQ4 (distilled, v1)", "bf-v1-he2048-plain", "p4-bias1024-0.02"),
+            ("oQ8", "p15-oq8-plain", "p16-oq8-bias1024-0.02"),
+            ("bf16 parent", "base-bf16-budget2048", "p12-bf16-bias1024-0.02"),
+            ("Ornith-1.5-35B-A3B 4-bit (teacher)", "p17-35b-plain", "p18-35b-bias1024-0.02")]
+    rows = []
+    for name, tp, ts in spec:
+        p, s_ = _summary(tp, "humaneval"), _summary(ts, "humaneval")
+        if not (p and s_):
+            rows.append(f"{name} & \\multicolumn{{6}}{{l}}{{\\emph{{pending}}}} \\\\")
+            continue
+        reg = _regressions(tp, ts, "humaneval")
+        frac = (s_["correct"] - p["correct"]) / max(p["truncated"], 1)
+        rows.append(f"{name} & {p['correct']} & {p['truncated']} & \\textbf{{{s_['correct']}}} & {s_['truncated']} & "
+                    f"{s_['correct'] - p['correct']:+d} & {reg} & {frac:.2f} \\\\")
+    return "\n".join([
+        "\\begin{table}[t]", "\\centering",
+        "\\caption{The soft ramp across the quantization ladder and the 35B teacher, HumanEval, 2{,}048-token "
+        "budget, our harness, $n_0 = 1{,}024$, $s = 0.02$. The gain tracks the truncation count on every build, "
+        "full precision included; \\emph{Regr.} is items correct under plain decoding that the ramp gets wrong.}",
+        "\\label{tab:generality}",
+        "\\begin{tabular}{lrrrrrrr}", "\\toprule",
+        " & \\multicolumn{2}{c}{Plain} & \\multicolumn{2}{c}{Ramp} & & & \\\\",
+        "\\cmidrule(lr){2-3} \\cmidrule(lr){4-5}",
+        "Build & Correct & Trunc. & Correct & Trunc. & $\\Delta$ & Regr. & $\\Delta$ / Trunc. \\\\", "\\midrule",
+        *rows,
+        "\\bottomrule", "\\end{tabular}", "\\end{table}",
+    ])
+
+
 def _mean_tokens(tag: str) -> str:
     items = _items(tag, "humaneval")
     return f"{sum(r['tokens'] for r in items.values()) / len(items):,.0f}" if items else "--"
@@ -258,6 +290,7 @@ if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for name, fn in [("tables_main", main_table), ("tables_runs", runs_table),
                      ("tables_forcing", forcing_table), ("tables_ladder", ladder_table),
-                     ("tables_soft", soft_table), ("tables_sweep", sweep_table)]:
+                     ("tables_soft", soft_table), ("tables_sweep", sweep_table),
+                     ("tables_generality", generality_table)]:
         (OUT / f"{name}.tex").write_text(fn() + "\n")
         print(f"wrote paper/{name}.tex")

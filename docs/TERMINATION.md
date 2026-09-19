@@ -191,8 +191,10 @@ answer) recovers less (142 on the distilled build) and has a cliff to place.
 Two attempts to train the same behaviour into the weights failed
 (`DECISIONS.md` §46–49): self-distilling the harness-closed traces found too
 few of them, and preference training against the model's own unterminated
-traces churned without changing when it stops. The behaviour lives in the
-quantized forward pass, and the repair belongs in the decoder.
+traces churned without changing when it stops. The same ramp lifts the bf16 parent by 17
+and the 35B teacher by 8 with no regressions (`DECISIONS.md` §53), so this is
+a repair for greedy reasoning under a budget that quantization amplifies, not
+one it creates. The repair belongs in the decoder.
 
 **The honest limits of this.** One model family, one quantization scheme, one
 hardware target. The mechanism behind the 4-bit build's verbosity is not

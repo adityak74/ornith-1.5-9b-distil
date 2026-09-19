@@ -1926,3 +1926,38 @@ recovers the same truncations plus a handful of wrong-by-overthinking items,
 with no cliff to place. It supersedes hard HALT as the recommended fix and
 goes into the paper as v2, with v9/v10 as the two training-side negatives
 that bound it.
+
+## 53. The ramp is not quantization-specific; the gain is a fraction of truncations
+
+Generality batch, HumanEval @ 2,048, ramp 1,024 / 0.02, per-item against plain:
+
+| build | plain | truncated | ramp | Δ | regressions | T→C | W→C |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| oQ3 | 75 | 78 | 107 | +32 | 1 | 30 | 3 |
+| oQ4 stock | 108 | 48 | 139 | +31 | 0 | 28 | 3 |
+| oQ4 distilled (v1) | 130 | 24 | 147 | +17 | 0 | 12 | 5 |
+| oQ8 | 136 | 26 | 154 | +18 | 0 | 17 | 1 |
+| bf16 parent | 135 | 20 | 152 | +17 | 0 | 11 | 6 |
+| Ornith-1.5-35B-A3B 4-bit (teacher) | 151 | 10 | 159 | +8 | 0 | 6 | 2 |
+
+Two corrections to how §50–52 read the result.
+
+**It is not a quantization repair.** The bf16 parent gains +17, the same as
+the distilled 4-bit build, and bf16 ramped at 2,048 (152) beats bf16 plain at
+4,096 (145). The 35B teacher gains too. Every reasoning build here over-thinks
+at a fixed budget; the ramp repairs that in all of them. What quantization
+does is raise the truncation count (20 → 26 → 48 → 78 down the ladder), so
+the quantized builds have more to recover. The paper's diagnosis (truncation
+dominates the measured quantization damage) stands; its framing of HALT as a
+repair *for quantized models* was too narrow and the v2 must say so.
+
+**The gain tracks the truncation count.** Δ / truncated is 0.65, 0.71,
+0.69, 0.85, 0.80 for oQ4 stock, oQ4 distilled, oQ8, bf16 and the 35B, and
+0.41 for oQ3, where more of the truncated items are beyond the 3-bit model
+however it is stopped. One regression in 735 previously-correct items across
+six builds. From 4 bits to full precision and from 9B to 35B, the ramp
+recovers two thirds to four fifths of whatever truncates, plus 1–6 items that
+had reasoned to a wrong answer.
+
+Together with §49: nothing about this is in the weights to be trained away;
+it is what greedy decoding of a reasoning model under a finite budget does.

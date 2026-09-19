@@ -1,0 +1,19 @@
+\begin{table}[t]
+\centering
+\caption{The soft ramp across the quantization ladder and the 35B teacher, HumanEval, 2{,}048-token budget, our harness, $n_0 = 1{,}024$, $s = 0.02$. The gain tracks the truncation count on every build, full precision included; \emph{Regr.} is items correct under plain decoding that the ramp gets wrong.}
+\label{tab:generality}
+\begin{tabular}{lrrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{Plain} & \multicolumn{2}{c}{Ramp} & & & \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+Build & Correct & Trunc. & Correct & Trunc. & $\Delta$ & Regr. & $\Delta$ / Trunc. \\
+\midrule
+oQ3 & 75 & 78 & \textbf{107} & 1 & +32 & 1 & 0.41 \\
+oQ4 (stock) & 108 & 48 & \textbf{139} & 0 & +31 & 0 & 0.65 \\
+oQ4 (distilled, v1) & 130 & 24 & \textbf{147} & 0 & +17 & 0 & 0.71 \\
+oQ8 & 136 & 26 & \textbf{154} & 0 & +18 & 0 & 0.69 \\
+bf16 parent & 135 & 20 & \textbf{152} & 0 & +17 & 0 & 0.85 \\
+Ornith-1.5-35B-A3B 4-bit (teacher) & 151 & 10 & \textbf{159} & 0 & +8 & 0 & 0.80 \\
+\bottomrule
+\end{tabular}
+\end{table}
