@@ -1834,3 +1834,52 @@ different experiment. Preference training as tried here is closed.
 
 Cost: ~6 h training + 2 × 1.5 h fuse/quantize/eval. Adapters and per-item
 records kept under runs/v10 and runs/v10-s150.
+
+## 50. Small probes, decode-time: a soft HALT beats the hard one
+
+After v9 and v10 (§46–49) the plan changed to many small probes, 30 minutes
+each, all on v1 @ oQ4, HumanEval @ 2,048 in our harness, plain baseline
+130 / 24 truncated, hard HALT (N = 256) 142 / 0.
+
+First, the GRPO feasibility check (`scripts/grpo_signal.py`): 8 samples at
+T = 0.8 per KodCode prompt at 2,048. Stopped at 27 groups: 22% had both a
+correct and a truncated member, 59% had no correct member at all. Below the
+30% bar set beforehand; a GRPO run on this pool would spend most of its
+generation on zero-gradient groups. Not pursued. QLoRA against the oQ4
+forward was also closed for deployment reasons: oMLX's `model_discovery.py`
+skips any directory with `adapter_config.json` ("oMLX does not support
+LoRA/PEFT adapters"), so a 4-bit-trained adapter would have to be fused and
+re-quantized, which discards most of the delta (§30 already ruled it out on
+speed).
+
+Then five decode-time probes, no training, same weights (`eval --rep-penalty
+/ --temp / --think-bias START:SLOPE`; records now keep the tail of each
+truncated think block):
+
+| probe | correct | truncated |
+|---|---:|---:|
+| plain | 130 | 24 |
+| repetition penalty 1.1 | 128 | 24 |
+| temperature 0.6 | 122 | 28 |
+| `</think>` bias +0.005 / token past 1,024 | 130 | 24 |
+| **`</think>` bias +0.02 / token past 1,024** | **147** | **0** |
+
+Of the 24 truncated traces: 2 loop, 14 had already written code inside the
+think block and kept verifying it, 8 were still reasoning. Truncation is not
+degeneration, which is why penalty and sampling do nothing.
+
+The ramp adds `slope × (n − start)` to the `</think>` logit while the block
+is open, nothing before `start`, nothing after the block closes. It is HALT
+without the cliff: instead of a forced close at one position, the stop
+decision gets gradually cheaper from 1,024 on, and the model chooses where.
+
+Per item against plain, slope 0.02: 130 C→C (**no regressions**), 12 T→C,
+12 T→W, 5 W→C, 5 W→W; all 76 items that finished under 1,024 tokens are
+byte-identical. Mean output 1,139 → 1,085 tokens. 147 is +17 over plain, +5
+over hard HALT, and +2 over the bf16 parent at 4,096 (145). The five W→C
+items reasoned past 1,024 tokens to a wrong answer under plain decoding and
+answer correctly when nudged to stop sooner — the paper's smoke-test
+observation (§45, n = 1) at n = 5.
+
+Next, same unit size: a sweep over (start, slope) and the stock oQ4 build,
+then MMLU on a subset, then the write-up as a v2 of the paper.
