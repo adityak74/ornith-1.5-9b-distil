@@ -1883,3 +1883,32 @@ observation (§45, n = 1) at n = 5.
 
 Next, same unit size: a sweep over (start, slope) and the stock oQ4 build,
 then MMLU on a subset, then the write-up as a v2 of the paper.
+
+## 51. The ramp is a plateau, and the stock build gains 31 items
+
+Sweep on v1 @ oQ4, HumanEval @ 2,048, per-item against plain (130 / 24):
+
+| start / slope | correct | truncated | regressions | mean tokens |
+|---|---:|---:|---:|---:|
+| 1,024 / 0.01 | 133 | 17 | 0 | 1,135 |
+| 1,024 / 0.02 | 147 | 0 | 0 | 1,085 |
+| 1,024 / 0.04 | 147 | 0 | 0 | 1,016 |
+| 768 / 0.02 | 146 | 0 | 1 | 1,032 |
+| 1,280 / 0.02 | 144 | 0 | 0 | 1,126 |
+
+A plateau from slope 0.02 up and start 768–1,280; only 0.01 is too weak to
+close the block by 2,048. No tuning needed; 1,024 / 0.02 is the setting.
+
+Stock oQ4 (no distillation), same budget: plain **108 / 48 truncated**, ramp
+1,024 / 0.02 **139 / 0**, zero regressions, 28 T→C and 3 W→C. +31 items,
++18.9 points. For scale, the paper's stock-with-HALT at 4,096 was 135 and
+v1 plain at 4,096 was 138: the ramped stock build at half the budget beats
+both. Untrained weights, one logits processor.
+
+Reading: quantization did not remove the model's ability to stop, it
+lowered the `</think>` logit relative to "keep going" at the positions
+where a decision is due. A bias that grows with position restores the
+decision without choosing the position for the model. HALT at a cliff
+was the coarse version of the same fix.
+
+Next: MMLU-250 @ 3,072 with the ramp from 2,048, then the paper v2.
