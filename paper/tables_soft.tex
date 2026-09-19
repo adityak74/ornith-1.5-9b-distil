@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{Soft \HALT{}: a bias of $0.02\,(n - n_0)$ on the \texttt{</think>} logit while the block is open, for generated position $n > n_0$; nothing before $n_0$, nothing once the block closes. Same weights and budget as \emph{plain}; \emph{hard} is the two-phase limit of Table~\ref{tab:forcing} ($N=256$). \emph{Regr.} counts items correct under plain decoding that the ramp gets wrong.}
+\label{tab:soft}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lllrrrrrrrr}
+\toprule
+ & & & \multicolumn{2}{c}{Plain} & Hard & \multicolumn{4}{c}{Soft ramp} & \\
+\cmidrule(lr){4-5} \cmidrule(lr){7-10}
+Model & Benchmark & Budget & Correct & Trunc. & Correct & $n_0$ & Correct & Trunc. & Regr. & $\Delta$ vs plain \\
+\midrule
+v1 & HumanEval & 2{,}048 & 130/164 & 24 & 142 & 1{,}024 & \textbf{147} & 0 & 0 & +17 \\
+stock oQ4 & HumanEval & 2{,}048 & 108/164 & 48 & -- & 1{,}024 & \textbf{139} & 0 & 0 & +31 \\
+v1 & MMLU$_{250}$ & 3{,}072 & 206/250 & 10 & 209 & 2{,}048 & \textbf{210} & 0 & 0 & +4 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

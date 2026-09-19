@@ -28,8 +28,9 @@
 \newcommand{\oQ}{\texttt{oQ4}}
 \newcommand{\RepoURL}{\url{https://github.com/adityak74/ornith-1.5-9b-distil}}
 \newcommand{\PRURL}{\url{https://github.com/ml-explore/mlx-lm/pull/1870}}
-% Headline forcing number for the abstract; Table~\ref{tab:forcing} has the full set.
-\newcommand{\Forcinghighlight}{+10.4 points of HumanEval on the stock quantized build and +7.3 on the distilled one at a 2{,}048-token budget}
+% Headline numbers for the abstract; Tables~\ref{tab:forcing} and \ref{tab:soft} have the full set.
+\newcommand{\Forcinghighlight}{+10.4 points of HumanEval on the stock quantized build and +7.3 on the distilled one}
+\newcommand{\Softhighlight}{+18.9 points on the stock build (108 to 139 of 164) and +10.4 on the distilled one at a 2{,}048-token budget, with no item that was correct becoming wrong}
 
 \title{\HALT{}: Quantized Reasoning Models Don't Stop,\\
 and a Harness-Applied Limit on Thinking Repairs Them}
@@ -49,32 +50,36 @@ and a Harness-Applied Limit on Thinking Repairs Them}
 \begin{abstract}
 Quantizing \Student{}, a 9B hybrid-attention reasoning model, to 4.7 bits costs
 4.6 points of MMLU and 3.7 of HumanEval against its bf16 parent.  We set out to
-recover that loss by distillation and, over twelve days on a single 64\,GB
-Apple M4 Pro, tried nine things.  The first worked: two-teacher sequence-level
+recover that loss by distillation and, over three weeks on a single 64\,GB
+Apple M4 Pro, tried twelve things.  The first worked: two-teacher sequence-level
 distillation with rejection sampling on verified traces, trained in bf16 and
 quantized last, gives a model at identical size and bit width that scores
 +5.5 MMLU and +3.0 HumanEval over the quantized baseline, beats the
 1.8$\times$ larger 8-bit build on both, and matches its own 35B teacher on
-MMLU---while generating 15--33\% fewer tokens.  The next seven did not: varying
-data mixture, volume, length distribution, training objective, filter, adapter
-capacity, and on-policy prompt selection all failed to improve on it, and a
-randomised control showed that a second training pass from the best checkpoint
-costs 1--4 points regardless of what it trains on.  Diagnosing \emph{why} the
+MMLU---while generating 15--33\% fewer tokens.  Nine training-side variants did
+not: data mixture, volume, length distribution, training objective, filter,
+adapter capacity, on-policy prompt selection, self-distillation of the
+model's own terminated traces, and preference training against its own
+unterminated ones all failed to improve on it, and a randomised control showed
+that a second training pass from the best checkpoint costs 1--4 points
+regardless of what it trains on.  Diagnosing \emph{why} the
 first run worked turned out to be the useful result: most of what quantization
 costs this model is not reasoning ability but the ability to \emph{stop}.  The
 4-bit build fails to reach an answer on 24\% of HumanEval problems its parent
 finishes, 22 of the 28 problems distillation recovered were budget exhaustions,
 and the effect reproduces as wall clock on a harness with no truncation penalty.
-The ninth attempt followed from that diagnosis and needed no training at all.
-\HALT{}, a Harness-Applied Limit on Thinking---close the reasoning block at the
-decode budget and let the model answer---recovers \Forcinghighlight{} on the
-same quantized weights,
-and a model forced to stop at 2{,}048 tokens outperforms the same model allowed
-4{,}096.  We conclude that termination is a decoding-time property before it is
+The two repairs that worked followed from that diagnosis and needed no training
+at all.  \HALT{}, a Harness-Applied Limit on Thinking, in its hard form closes
+the reasoning block at the decode budget and lets the model answer, recovering
+\Forcinghighlight{} on the same quantized weights.  In its soft form it adds a
+bias to the \texttt{</think>} logit that grows with position, so the model
+chooses where to stop but stopping gets steadily cheaper: this recovers
+\Softhighlight{}, beats the hard form, and at 2{,}048 tokens outscores the
+full-precision parent at 4{,}096.  We conclude that termination is a decoding-time property before it is
 a weights property, that any benchmark of a reasoning model that does not
 report its truncation rate is partly reporting its own token budget, and we
 release the pipeline, every checkpoint, per-item evaluation records and a
-45-section decision log.  Along the way we contribute a chunkwise-parallel
+52-section decision log.  Along the way we contribute a chunkwise-parallel
 training path for gated DeltaNet layers in MLX (24$\times$ memory, 135$\times$
 speed at 4{,}096 tokens), now upstream.
 \end{abstract}
@@ -102,11 +107,17 @@ multiply.  The same bf16 weights score 82.3\% or 88.4\% on HumanEval depending
 only on whether the budget is 2{,}048 or 4{,}096 tokens.
 
 Once the failure is named, the cheapest repair is obvious: stop the model for
-it.  We call the result \HALT{}, a Harness-Applied Limit on Thinking: the
-closing half of budget forcing \citep{muennighoff2025s1}, applied as a
-two-phase decoder that closes the reasoning block when the budget is nearly
-spent and lets the model commit.  It is a decoder change, not a training run.
-It is the ninth thing we tried and, per token of budget, the best.
+it.  We call the result \HALT{}, a Harness-Applied Limit on Thinking, and it
+comes in two forms.  The hard form is the closing half of budget forcing
+\citep{muennighoff2025s1}, applied as a two-phase decoder that closes the
+reasoning block when the budget is nearly spent and lets the model commit.  The
+soft form is a single logits processor: a bias on the \texttt{</think>} token
+that grows linearly with position once reasoning has run past a threshold, so
+the model still chooses where to stop, but stopping gets cheaper the longer it
+goes on.  Neither is a training run.  The soft form recovers 31 of 164
+HumanEval problems on the stock 4-bit build with no regressions, and two
+training-side attempts to move the same behaviour into the weights both
+failed---which is itself evidence about where the behaviour lives.
 
 \paragraph{Contributions.}
 \begin{enumerate}[leftmargin=1.5em]
@@ -116,12 +127,15 @@ It is the ninth thing we tried and, per token of budget, the best.
   \item A diagnosis (\S\ref{sec:mechanism}): quantization damages termination
     more than reasoning, evidenced six ways, including in the 35B teacher.
   \item A decoding-side repair (\S\ref{sec:forcing}): \HALT{}, a harness-applied
-    limit on thinking, on the same weights, with the finding that stopping
-    \emph{earlier} than the model would stop itself improves accuracy.
-  \item Eight controlled negative results (\S\ref{sec:negative}), including a
+    limit on thinking, in a hard (two-phase) and a soft (logit ramp) form, on
+    the same weights, with the finding that stopping \emph{earlier} than the
+    model would stop itself improves accuracy and that the soft form does so
+    with zero regressions across three benchmark--build pairs.
+  \item Ten controlled negative results (\S\ref{sec:negative}), including a
     randomised control showing that continued training from the best checkpoint
-    is itself harmful, and evidence that the teacher cannot supply the one
-    behaviour the student lacks.
+    is itself harmful, evidence that the teacher cannot supply the one
+    behaviour the student lacks, and two failed attempts to train the
+    \HALT{} behaviour into the weights.
   \item An engineering result (\S\ref{sec:engineering}): a differentiable
     chunkwise training path for gated DeltaNet in MLX, contributed upstream.
 \end{enumerate}
@@ -361,10 +375,11 @@ diff caught it where the aggregate did not.
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.75\textwidth]{fig_halt.pdf}
-\caption{\HALT{} on the same weights (Table~\ref{tab:forcing}).  Grey: plain decoding under
-the budget, with the number of problems truncated before answering.  Red: two-phase decoding
-with a 256-token reserve; no item receives more total budget.  Dashed: the bf16 parent at
-4{,}096 on the same harness.}
+\caption{\HALT{} on the same weights (Tables~\ref{tab:forcing} and \ref{tab:soft}).  Grey: plain
+decoding under the budget, with the number of problems truncated before answering.  Red: the hard
+form, two-phase decoding with a 256-token reserve.  Blue: the soft form, a \texttt{</think>} logit
+ramp from 1{,}024 tokens.  No item receives more total budget in either.  Dashed: the bf16 parent
+at 4{,}096 on the same harness.}
 \label{fig:halt}
 \end{figure}
 
@@ -383,9 +398,58 @@ to $\approx$2{,}050 tokens and answered \emph{wrong} was answered \emph{right}
 when cut at 1{,}792: past some point, continued reasoning has negative value
 and the model does not detect it.  Wall clock is unchanged.
 
-\HALT{} was the ninth thing we tried.  It is a two-phase change to the decoder,
-it generalises to any model with this failure mode including the stock build
-we would have shipped without distillation, and it needed no training.
+\subsection{The soft form: a ramp on the stop logit}
+\label{sec:soft}
+
+The hard form places a cliff: reasoning ends at $B-N$ whether or not the model
+was one sentence from an answer.  A small series of decode-time probes, each a
+30-minute HumanEval run on the same weights, asked what else moves the
+truncations.  A repetition penalty of 1.1 does nothing (128 correct, 24
+truncated against 130/24 plain) and sampling at $T=0.6$ hurts (122/28); reading
+the tail of each truncated trace explains why, since only 2 of 24 loop, while
+14 had already written a solution inside the reasoning block and were still
+checking it and 8 were reasoning.  Truncation is not degeneration.
+
+The probe that worked is a bias of $s\,(n-n_0)$ added to the \texttt{</think>}
+logit at generated position $n>n_0$ while the block is open, and nothing
+otherwise.  Before $n_0$ decoding is byte-identical to plain; once the block
+closes the processor is inert.  Table~\ref{tab:soft} gives the result at
+$n_0=1{,}024$, $s=0.02$.  On the distilled build, 147 of 164, \textbf{+17 over
+plain and +5 over the hard form}, with every one of the 130 items plain
+decoding solved still solved.  On the \textbf{stock} \oQ{} build, 108 to
+\textbf{139}, +18.9 points: 28 of its 48 truncations become correct answers and
+3 wrong answers do too, again with no regressions.  For scale, the ramped stock
+build at 2{,}048 tokens beats both the hard form on the same build at 4{,}096
+(135) and the distilled build decoded plainly at 4{,}096 (138), and the ramped
+distilled build beats its own bf16 parent at 4{,}096 (145).  MMLU moves the
+same way at its smaller truncation rate: 206 to 210 of 250, no regressions.
+
+\input{tables_soft}
+\input{tables_sweep}
+
+Table~\ref{tab:sweep} shows the setting is not delicate.  Any slope from 0.02
+and any $n_0$ from 768 to 1{,}280 closes every block by the budget and lands
+between 144 and 147; only $s=0.01$ is too weak to matter.  Mean output length
+falls with the ramp (1{,}139 to 1{,}085 tokens at $s=0.02$), so it is also
+cheaper.  The five items that go from wrong to right are ones that reasoned
+past 1{,}024 tokens to a wrong answer under plain decoding and answer
+correctly when stopping is made cheaper: the pilot observation above, at
+$n=5$.
+
+Our reading is that quantization did not remove the model's ability to stop.
+It lowered the \texttt{</think>} logit relative to continuing at the positions
+where the decision is due, by an amount that grows with how long the model has
+been reasoning.  A bias that grows with position restores the decision without
+making it for the model; the hard form was the coarse version of the same
+repair.  Two attempts to move this repair into the weights are reported in
+\S\ref{sec:v9v10}; both failed, which is consistent with the behaviour being a
+property of the quantized forward pass rather than of anything the training
+data can teach.
+
+\HALT{} generalises to any model with this failure mode, including the stock
+build we would have shipped without distillation, and it needed no training.
+The soft form is the one we recommend: one logits processor, no phase
+boundary, and a worst case identical to plain decoding.
 
 \section{What did not work, and what the controls established}
 \label{sec:negative}
@@ -484,6 +548,32 @@ gains.  Three bugs surfaced during this run and are fixed in the released
 code: a verifier ordering that scored model-copied test calls as
 \texttt{NameError}s, a batching loop that silently dropped prompts at every
 domain boundary (present since v1), and rollouts that did not store answer text.
+
+\subsection{The \HALT{} behaviour does not train into the weights (v9, v10)}
+\label{sec:v9v10}
+
+If a decode-time bias repairs stopping, can the repair be distilled into the
+weights so no harness is needed?  Two attempts, each with a go/no-go set before
+the run.  \textbf{v9} rolled the distilled build out under the hard form over
+the 4{,}974-prompt pool and kept every verified-correct trace, tagging those
+the harness had closed, to train on.  The yield was the problem: at a
+1{,}536-token budget the model solved 21\% of the pool's code and only 27 of
+911 forced traces verified; at 2{,}304 it solved 34\% and 7 of 551 forced
+traces verified.  The pool is harder than HumanEval, and an item still reasoning
+at the budget there has usually not reached an answer to commit to.  Below the
+150-trace threshold, nothing was trained.  \textbf{v10} used the abundant
+negative instead: 378 pairs of a verified teacher trace against the student's
+own unterminated trace on the same prompt, trained with sigmoid DPO
+\citep{rafailov2023dpo} plus a cross-entropy term on the chosen trace, reference
+fixed at v1, factorised into three single-sequence passes so a 3{,}072-token
+pair fits in 35\,GB.  The loss reached zero within 50 steps (the pairs are
+trivially separable) and the margin kept growing; at both the final and an
+early checkpoint the model truncated \emph{more} than v1 (30 and 39 against
+24) and lost 7--14 items, with gains and losses symmetric across problems.
+Sequence-level preference moves the likelihood of whole traces; stopping is a
+decision at one token, and nothing in the pair localises credit there.  A
+feasibility check for verifier-reward RL found that 59\% of prompt groups in
+the pool had no correct sample among eight, so that route was not taken.
 
 \section{Engineering: a chunkwise training path for gated DeltaNet}
 \label{sec:engineering}
@@ -587,11 +677,12 @@ its regression was not repaired.
 \section{Conclusion}
 
 A 4-bit reasoning model's dominant failure is that it does not stop.  We found
-this the slow way: one distillation run that worked, seven that did not, and a
+this the slow way: one distillation run that worked, nine that did not, and a
 control that showed trying harder from the best checkpoint makes it worse.
 Reading the per-item records and the timing column is what turned the negative
-results into a diagnosis, and the diagnosis into the one intervention that
-needed no training.  The practical recommendations are short.  Report
+results into a diagnosis, and the diagnosis into two interventions that needed
+no training, of which the softer one---make stopping gradually cheaper and let
+the model choose---is the better and the simpler.  The practical recommendations are short.  Report
 truncation rates next to accuracy.  Measure generation length before and after
 quantizing; wall clock is the cheapest early warning.  And treat the token
 budget as part of the model being evaluated, because for a reasoning model it
@@ -600,11 +691,12 @@ is.
 \section*{Reproducibility}
 
 Code, configurations, every run's adapters, fused checkpoints, teacher traces,
-per-item evaluation records and a 45-section decision log are at \RepoURL{}.
+per-item evaluation records and a 52-section decision log are at \RepoURL{}.
 \texttt{benchmarks/baseline.json} holds every number in this paper with its
 measurement date and harness; \texttt{scripts/make\_paper\_tables.py}
 regenerates every table in this paper from those files.
-\texttt{odistil eval --force-budget N} reproduces \HALT{} (\S\ref{sec:forcing}).
+\texttt{odistil eval --force-budget N} reproduces the hard form of \HALT{} and
+\texttt{--think-bias 1024:0.02} the soft form (\S\ref{sec:forcing}).
 
 \bibliography{references}
 \bibliographystyle{plainnat}

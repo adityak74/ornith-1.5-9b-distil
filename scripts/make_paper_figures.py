@@ -96,30 +96,43 @@ def fig_ladder() -> None:
 
 
 def fig_halt() -> None:
-    """HALT effect: plain vs forced per (model, budget), correct counts."""
-    spec = [("stock oQ4\n4,096", "bf-stock-he4096-plain", "bf-stock-he4096-forced"),
-            ("distilled\n2,048", "bf-v1-he2048-plain", "bf-v1-he2048-forced"),
-            ("distilled\n4,096", "bf-v1-he4096-plain", "bf-v1-he4096-forced")]
-    labels, plain, forced, trunc = [], [], [], []
-    for lab, tp, tf in spec:
-        p, f = summary(tp), summary(tf)
-        if not (p and f):
+    """HALT effect: plain vs hard vs soft per (model, budget), correct counts."""
+    spec = [("stock oQ4\n2,048", "p9-stock-plain", None, "p10-stock-bias1024-0.02"),
+            ("stock oQ4\n4,096", "bf-stock-he4096-plain", "bf-stock-he4096-forced", None),
+            ("distilled\n2,048", "bf-v1-he2048-plain", "bf-v1-he2048-forced", "p4-bias1024-0.02"),
+            ("distilled\n4,096", "bf-v1-he4096-plain", "bf-v1-he4096-forced", None)]
+    fig, ax = plt.subplots(figsize=(5.2, 3.2))
+    w = 0.27
+    labels, seen = [], set()
+
+    def lab_once(key, text):
+        if key in seen:
+            return None
+        seen.add(key)
+        return text
+
+    for i, (lab, tp, tf, ts) in enumerate(spec):
+        p = summary(tp)
+        if not p:
             continue
-        labels.append(lab); plain.append(p["correct"]); forced.append(f["correct"]); trunc.append(p["truncated"])
-    fig, ax = plt.subplots(figsize=(4.6, 3.0))
-    xs = range(len(labels)); w = 0.36
-    ax.bar([x - w / 2 for x in xs], plain, w, color=C["stock"], label="plain decoding")
-    ax.bar([x + w / 2 for x in xs], forced, w, color=C["forced"], label="+ HALT (N = 256)")
-    for x, p, f, t in zip(xs, plain, forced, trunc):
-        ax.text(x - w / 2, p + 1.5, f"{p}\n({t} trunc.)", ha="center", fontsize=6.5)
-        ax.text(x + w / 2, f + 1.5, f"{f}\n(+{f - p})", ha="center", fontsize=6.5, color=C["forced"])
+        labels.append(lab)
+        ax.bar(i - w, p["correct"], w, color=C["stock"], label=lab_once("plain", "plain"))
+        ax.text(i - w, p["correct"] + 1.2, f"{p['correct']}\n({p['truncated']} tr.)", ha="center", va="bottom", fontsize=6)
+        f = summary(tf) if tf else None
+        if f:
+            ax.bar(i, f["correct"], w, color=C["forced"], label=lab_once("hard", "hard HALT (N = 256)"))
+            ax.text(i, f["correct"] + 1.2, f"{f['correct']}\n(+{f['correct'] - p['correct']})", ha="center", va="bottom", fontsize=6, color=C["forced"])
+        s_ = summary(ts) if ts else None
+        if s_:
+            ax.bar(i + w, s_["correct"], w, color=C["v1"], label=lab_once("soft", "soft HALT (ramp)"))
+            ax.text(i + w, s_["correct"] + 1.2, f"{s_['correct']}\n(+{s_['correct'] - p['correct']})", ha="center", va="bottom", fontsize=6, color=C["v1"])
     ax.axhline(145, color=C["bf16"], linewidth=0.8, linestyle="--")
-    ax.text(-0.45, 146.5, "bf16 parent, 4,096", ha="left", fontsize=6.5, color=C["bf16"])
-    ax.set_xticks(list(xs)); ax.set_xticklabels(labels)
+    ax.text(0.62, 145.8, "bf16 parent, 4,096", ha="center", va="bottom", fontsize=6.5, color=C["bf16"])
+    ax.set_xticks(range(len(labels))); ax.set_xticklabels(labels)
     ax.set_ylabel("HumanEval problems solved (of 164)")
-    ax.set_ylim(100, 164)
-    ax.set_title("HALT on the same weights: no training, no extra budget")
-    ax.legend(loc="lower right", frameon=False)
+    ax.set_ylim(100, 168)
+    ax.set_title("Same weights, no training: hard and soft HALT")
+    ax.legend(loc="upper left", frameon=False, fontsize=7, ncol=3, bbox_to_anchor=(0, 1.0))
     fig.tight_layout()
     fig.savefig(OUT / "fig_halt.pdf")
 

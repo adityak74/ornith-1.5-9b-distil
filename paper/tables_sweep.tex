@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{Ramp sweep on the distilled oQ4 build, HumanEval, 2{,}048-token budget, our harness. The effect is a plateau: any slope from 0.02 and any start from 768 to 1{,}280 closes every block and recovers 14--17 items; 0.01 is too weak to close the block by the budget.}
+\label{tab:sweep}
+\begin{tabular}{llrrrr}
+\toprule
+$n_0$ & slope & Correct & Trunc. & Regr. & Mean tokens \\
+\midrule
+\multicolumn{2}{l}{plain} & 130 & 24 & -- & 1,139 \\
+\midrule
+1{,}024 & 0.01 & 133 & 17 & 0 & 1,135 \\
+1{,}024 & 0.02 & 147 & 0 & 0 & 1,085 \\
+1{,}024 & 0.04 & 147 & 0 & 0 & 1,016 \\
+768 & 0.02 & 146 & 0 & 1 & 1,032 \\
+1{,}280 & 0.02 & 144 & 0 & 0 & 1,126 \\
+\bottomrule
+\end{tabular}
+\end{table}
