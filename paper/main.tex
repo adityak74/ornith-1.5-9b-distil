@@ -31,7 +31,7 @@
 % Headline numbers for the abstract; Tables~\ref{tab:forcing} and \ref{tab:soft} have the full set.
 \newcommand{\Forcinghighlight}{+10.4 points of HumanEval on the stock quantized build and +7.3 on the distilled one}
 \newcommand{\Softhighlight}{+18.9 points on the stock build (108 to 139 of 164) and +10.4 on the distilled one at a 2{,}048-token budget, with no item that was correct becoming wrong}
-\newcommand{\Generalhighlight}{the 3-bit, 4-bit, 8-bit and full-precision builds and the 35B teacher all gain, by two thirds to four fifths of whatever truncated, with one regression in 735 previously-correct items}
+\newcommand{\Generalhighlight}{the 3-bit, 4-bit, 8-bit and full-precision builds, the 35B teacher, a dense Qwen3.8-27B and a mixture-of-experts Qwen3.6-35B all gain, by two thirds to nine tenths of whatever truncated, with one regression in 1{,}472 previously-correct items across three benchmarks; the Qwen MoE goes from 27 to 147 of 164 on the same weights and budget}
 
 \title{\HALT{}: Quantized Reasoning Models Don't Stop,\\
 and a Harness-Applied Limit on Thinking Repairs Them}
@@ -78,12 +78,13 @@ chooses where to stop but stopping gets steadily cheaper: this recovers
 \Softhighlight{}, beats the hard form, and at 2{,}048 tokens outscores the
 full-precision parent at 4{,}096.  The ramp is not a quantization repair:
 \Generalhighlight{}.  Every build over-thinks at a fixed budget; quantization
-raises how often, so the quantized builds have the most to recover.  We
-conclude that termination is a decoding-time property before it is a weights
+raises how often, so the quantized builds have the most to recover.  On
+TruthfulQA, where every training run lost ground, the ramp gains 3.3 points with
+no regressions.  We conclude that termination is a decoding-time property before it is a weights
 property, that any benchmark of a reasoning model that does not report its
 truncation rate is partly reporting its own token budget, and we
 release the pipeline, every checkpoint, per-item evaluation records and a
-53-section decision log.  Along the way we contribute a chunkwise-parallel
+54-section decision log.  Along the way we contribute a chunkwise-parallel
 training path for gated DeltaNet layers in MLX (24$\times$ memory, 135$\times$
 speed at 4{,}096 tokens), now upstream.
 \end{abstract}
@@ -121,8 +122,9 @@ the model still chooses where to stop, but stopping gets cheaper the longer it
 goes on.  Neither is a training run.  The soft form recovers 31 of 164
 HumanEval problems on the stock 4-bit build with no regressions, and it turns
 out not to be about quantization at all: the same ramp lifts the bf16 parent
-by 17 and the 35B teacher by 8, and across six builds from 3 bits to full
-precision the gain is a fixed fraction of what truncated.  Two training-side
+by 17 and the 35B teacher by 8, takes a 4-bit Qwen3.6-35B-A3B from 27 to 147 of
+164 at the same budget, and across eight builds of three architectures the
+gain is a fixed fraction of what truncated.  Two training-side
 attempts to move the behaviour into the weights both failed, which is
 consistent with it being a property of greedy decoding under a finite budget
 rather than of anything the weights encode.
@@ -138,8 +140,9 @@ rather than of anything the weights encode.
     limit on thinking, in a hard (two-phase) and a soft (logit ramp) form, on
     the same weights, with the finding that stopping \emph{earlier} than the
     model would stop itself improves accuracy, that the soft form does so with
-    one regression in 735 items across six builds, and that the gain tracks
-    the truncation count from 3 bits to full precision and from 9B to 35B.
+    one regression in 1{,}472 items across eight builds and three benchmarks,
+    and that the gain tracks the truncation count from 3 bits to full
+    precision, from 9B to 35B, and across hybrid, dense and MoE architectures.
   \item Ten controlled negative results (\S\ref{sec:negative}), including a
     randomised control showing that continued training from the best checkpoint
     is itself harmful, evidence that the teacher cannot supply the one
@@ -456,6 +459,18 @@ two thirds to four fifths of whatever truncated; at 3 bits it recovers 41\%,
 because more of what the 3-bit model fails to finish it also cannot solve.
 One item regressed in 735 previously-correct items across the six builds.
 
+Two other architectures behave the same way.  \textbf{Qwen3.8-27B}, dense,
+4-bit, goes from 116 to 147 with 44 truncations, a ratio of 0.70.
+\textbf{Qwen3.6-35B-A3B}, mixture-of-experts, 4-bit, solves \textbf{27 of 164}
+when decoded plainly at 2{,}048 tokens because it is still reasoning at the
+budget on 135 of them; with the ramp it solves \textbf{147}, the same count as
+the distilled 9B and Ornith's 35B teacher, and 118 of the 135 truncations
+become correct answers.  A model that benchmarks at 16\% under one decoder
+benchmarks at 90\% under another, on the same weights.  Neither Qwen build has a
+regression.  On TruthfulQA (Table~\ref{tab:soft}), the benchmark every training
+run in \S\ref{sec:negative} lost on, the distilled 9B gains 27 of 817 with none
+lost.
+
 \input{tables_generality}
 
 \begin{figure}[t]
@@ -463,8 +478,8 @@ One item regressed in 735 previously-correct items across the six builds.
 \includegraphics[width=0.62\textwidth]{fig_generality.pdf}
 \caption{Ramp gain against plain-decoding truncation count, one point per build,
 HumanEval at 2{,}048 (Table~\ref{tab:generality}).  The dotted line is every
-truncation recovered; the dashed line is 70\%.  Full precision sits on the same
-line as the quantized builds.}
+truncation recovered; the dashed line is 70\%.  Full precision, the dense Qwen
+and the MoE Qwen sit on the same line as the quantized Ornith builds.}
 \label{fig:generality}
 \end{figure}
 
@@ -680,14 +695,17 @@ failure in \S\ref{sec:v5} does not arise.
 \section{Threats to validity}
 
 \paragraph{Scope.}
-One model family, one quantization scheme, one hardware target; the ramp was
-measured on two model sizes and five bit widths of that family.  The
+One model family for the distillation results, one quantization scheme, one
+hardware target.  The ramp was measured on two model sizes and five bit widths
+of that family and on two other architectures at 4 bits; three benchmarks, one
+regression in 1{,}472 items.  The
 \emph{mechanism} behind the quantized model's verbosity is documented, not
 explained: we show that a coarser weight grid produces longer reasoning and that
 this dominates the measured damage, not why.  The ramp's effect on the
 full-precision parent (\S\ref{sec:soft}) means the repair addresses a property
 of greedy budgeted decoding that quantization amplifies, not one it creates;
-we have not tested whether other model families amplify it the same way.
+the two other families tested sit on the same line, but both were 4-bit
+and neither was run at full precision.
 
 \paragraph{Measurement.}
 The quantization-ladder timing (\S\ref{sec:mechanism}) is wall clock, not
@@ -733,7 +751,7 @@ is.
 \section*{Reproducibility}
 
 Code, configurations, every run's adapters, fused checkpoints, teacher traces,
-per-item evaluation records and a 53-section decision log are at \RepoURL{}.
+per-item evaluation records and a 54-section decision log are at \RepoURL{}.
 \texttt{benchmarks/baseline.json} holds every number in this paper with its
 measurement date and harness; \texttt{scripts/make\_paper\_tables.py}
 regenerates every table in this paper from those files.

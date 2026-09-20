@@ -1961,3 +1961,33 @@ had reasoned to a wrong answer.
 
 Together with §49: nothing about this is in the weights to be trained away;
 it is what greedy decoding of a reasoning model under a finite budget does.
+
+## 54. Two more families and TruthfulQA: the line holds, and one model goes from 16% to 90%
+
+Same ramp (1,024 / 0.02), 2,048-token budget, our harness, per-item against plain:
+
+| model | benchmark | plain | truncated | ramp | Δ | regressions | Δ / trunc |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Qwen3.8-27B dense, 4-bit | HumanEval | 116 | 44 | 147 | +31 | 0 | 0.70 |
+| Qwen3.6-35B-A3B MoE, 4-bit | HumanEval | 27 | 135 | 147 | +120 | 0 | 0.89 |
+| Ornith-1.5-9B distilled oQ4 | TruthfulQA (817) | 583 | 67 | 610 | +27 | 0 | 0.40 |
+
+**Qwen3.6-35B-A3B** decoded plainly at 2,048 tokens solves 27 of 164 HumanEval
+problems, because it is still reasoning at the budget on 135 of them. With
+the ramp it solves 147, the same count as Ornith's 35B teacher and the
+distilled 9B, and 118 of the 135 truncations are correct answers. Mean output
+1,917 → 1,641 tokens. A model that benchmarks at 16% under one decoder
+benchmarks at 90% under another, on the same weights and budget.
+
+**Qwen3.8-27B**, a dense architecture (Ornith is hybrid-attention, the
+Qwen-35B is MoE), lands at Δ / truncated = 0.70, on the same line as the
+Ornith ladder in §53.
+
+**TruthfulQA**, the benchmark every distillation run lost on, gains +27
+(+3.3 points) with zero regressions; 24 of 67 truncations recover. The
+lower fraction (0.40) fits the §5 reading that a truncated TruthfulQA trace
+is often a hedge with no right answer coming.
+
+Across eight HumanEval builds, three architectures, three benchmarks and
+1,472 previously-correct items, the ramp has one regression (oQ3). The
+"one model family" limitation in the paper's threats section is closed.

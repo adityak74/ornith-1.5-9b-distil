@@ -615,6 +615,11 @@ every build here over-runs. Quantization raises how often (20 → 26 → 48 → 
 truncations from bf16 down to 3 bits), which is why it showed up as the
 dominant quantization damage in §4.
 
+Two other architectures and a third benchmark (§54): Qwen3.8-27B dense
+4-bit 116 → 147; Qwen3.6-35B-A3B MoE 4-bit **27 → 147**, a model that scores
+16% at 2,048 tokens under plain decoding and 90% under the ramp; TruthfulQA
+on v1 583 → 610 of 817. No regressions in any of them.
+
 The reading, held together with v9 and v10: greedy decoding under a budget
 depresses the stop decision by an amount that grows with position, and
 quantization amplifies it. A

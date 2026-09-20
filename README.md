@@ -106,8 +106,9 @@ odistil eval --model student:oq4 --benchmark humaneval --max-tokens 2048 --force
 ```
 
 The ramp is inert before token 1,024 and after the block closes, so its worst
-case is plain decoding. It is not specific to 4-bit: the bf16 parent goes
-135 → 152 and the 35B teacher 151 → 159 under the same setting. `DECISIONS.md` §50–52 has the sweep; the paper has the
+case is plain decoding. It is not specific to 4-bit or to this family: the bf16 parent goes
+135 → 152, the 35B teacher 151 → 159, Qwen3.8-27B 4-bit 116 → 147, and
+Qwen3.6-35B-A3B 4-bit 27 → 147 under the same setting (`DECISIONS.md` §53–54). `DECISIONS.md` §50–52 has the sweep; the paper has the
 full comparison.
 
 The mechanism shows up in every column: **truncations roughly halve**. The

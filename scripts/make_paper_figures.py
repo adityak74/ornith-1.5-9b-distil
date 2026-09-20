@@ -170,8 +170,10 @@ def fig_generality() -> None:
             ("oQ4 distilled", "bf-v1-he2048-plain", "p4-bias1024-0.02", C["v1"]),
             ("oQ8", "p15-oq8-plain", "p16-oq8-bias1024-0.02", C["stock"]),
             ("bf16", "base-bf16-budget2048", "p12-bf16-bias1024-0.02", C["bf16"]),
-            ("35B teacher, 4-bit", "p17-35b-plain", "p18-35b-bias1024-0.02", C["forced"])]
-    fig, ax = plt.subplots(figsize=(4.6, 3.0))
+            ("35B teacher, 4-bit", "p17-35b-plain", "p18-35b-bias1024-0.02", C["forced"]),
+            ("Qwen3.8-27B, 4-bit", "p21-qwen27b-plain", "p22-qwen27b-bias1024-0.02", "#7d3c98"),
+            ("Qwen3.6-35B-A3B, 4-bit", "p23-qwen35b-plain", "p24-qwen35b-bias1024-0.02", "#7d3c98")]
+    fig, ax = plt.subplots(figsize=(4.6, 3.2))
     xs, ys = [], []
     for name, tp, ts, col in spec:
         p, s_ = summary(tp), summary(ts)
@@ -180,7 +182,8 @@ def fig_generality() -> None:
         x, y = p["truncated"], s_["correct"] - p["correct"]
         xs.append(x); ys.append(y)
         ax.scatter(x, y, c=col, s=40, zorder=3, edgecolor="white", linewidth=0.5)
-        off = {"bf16": (-2, 3.5), "oQ8": (2, -4.5), "oQ4 distilled": (2, 1.5)}.get(name, (1.8, -1.8))
+        off = {"bf16": (-4, 5), "oQ8": (3, -7), "oQ4 distilled": (3, 2), "oQ4 stock": (3, -6),
+               "Qwen3.8-27B, 4-bit": (3, 3), "Qwen3.6-35B-A3B, 4-bit": (-4, -9), "oQ3": (3, -2)}.get(name, (2, -3))
         ax.annotate(name, (x, y), (x + off[0], y + off[1]), fontsize=6.5, color=col)
     hi = max(xs) + 8
     ax.plot([0, hi], [0, hi], color="#bbbbbb", linewidth=0.7, linestyle=":")
@@ -189,7 +192,7 @@ def fig_generality() -> None:
     ax.text(hi - 1, 0.7 * hi - 4.5, "70%", ha="right", fontsize=6, color="#888888")
     ax.set_xlabel("problems truncated under plain decoding (of 164)")
     ax.set_ylabel("problems gained by the ramp")
-    ax.set_title("The gain tracks truncation, full precision included")
+    ax.set_title("The gain tracks truncation: three architectures, five bit widths")
     ax.set_xlim(0, hi); ax.set_ylim(0, hi)
     ax.grid(alpha=0.25, linewidth=0.5)
     fig.tight_layout()

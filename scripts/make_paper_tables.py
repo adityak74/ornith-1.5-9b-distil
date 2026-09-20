@@ -172,6 +172,7 @@ def soft_table() -> str:
         ("v1", "HumanEval", "2{,}048", "humaneval", "bf-v1-he2048-plain", "bf-v1-he2048-forced", "p4-bias1024-0.02", "1{,}024"),
         ("stock oQ4", "HumanEval", "2{,}048", "humaneval", "p9-stock-plain", None, "p10-stock-bias1024-0.02", "1{,}024"),
         ("v1", "MMLU$_{250}$", "3{,}072", "mmlu", "bf-v1-mmlu250-plain", "bf-v1-mmlu250-forced", "p11-v1-mmlu250-bias2048-0.02", "2{,}048"),
+        ("v1", "TruthfulQA", "2{,}048", "truthfulqa", "p19-v1-tqa-plain", None, "p20-v1-tqa-bias1024-0.02", "1{,}024"),
     ]
     rows = []
     for model, bench, budget, b, tp, tf, ts, start in spec:
@@ -234,9 +235,16 @@ def generality_table() -> str:
             ("oQ4 (distilled, v1)", "bf-v1-he2048-plain", "p4-bias1024-0.02"),
             ("oQ8", "p15-oq8-plain", "p16-oq8-bias1024-0.02"),
             ("bf16 parent", "base-bf16-budget2048", "p12-bf16-bias1024-0.02"),
-            ("Ornith-1.5-35B-A3B 4-bit (teacher)", "p17-35b-plain", "p18-35b-bias1024-0.02")]
+            ("Ornith-1.5-35B-A3B 4-bit (teacher)", "p17-35b-plain", "p18-35b-bias1024-0.02"),
+            "\\midrule",
+            ("Qwen3.8-27B 4-bit (dense)", "p21-qwen27b-plain", "p22-qwen27b-bias1024-0.02"),
+            ("Qwen3.6-35B-A3B 4-bit (MoE)", "p23-qwen35b-plain", "p24-qwen35b-bias1024-0.02")]
     rows = []
-    for name, tp, ts in spec:
+    for entry in spec:
+        if isinstance(entry, str):
+            rows.append(entry)
+            continue
+        name, tp, ts = entry
         p, s_ = _summary(tp, "humaneval"), _summary(ts, "humaneval")
         if not (p and s_):
             rows.append(f"{name} & \\multicolumn{{6}}{{l}}{{\\emph{{pending}}}} \\\\")
@@ -247,9 +255,10 @@ def generality_table() -> str:
                     f"{s_['correct'] - p['correct']:+d} & {reg} & {frac:.2f} \\\\")
     return "\n".join([
         "\\begin{table}[t]", "\\centering",
-        "\\caption{The soft ramp across the quantization ladder and the 35B teacher, HumanEval, 2{,}048-token "
-        "budget, our harness, $n_0 = 1{,}024$, $s = 0.02$. The gain tracks the truncation count on every build, "
-        "full precision included; \\emph{Regr.} is items correct under plain decoding that the ramp gets wrong.}",
+        "\\caption{The soft ramp across the quantization ladder, the 35B teacher, and two other architectures, "
+        "HumanEval, 2{,}048-token budget, our harness, $n_0 = 1{,}024$, $s = 0.02$. The gain tracks the truncation "
+        "count on every build, full precision included; \\emph{Regr.} is items correct under plain decoding that "
+        "the ramp gets wrong.}",
         "\\label{tab:generality}",
         "\\begin{tabular}{lrrrrrrr}", "\\toprule",
         " & \\multicolumn{2}{c}{Plain} & \\multicolumn{2}{c}{Ramp} & & & \\\\",
