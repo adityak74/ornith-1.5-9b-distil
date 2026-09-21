@@ -443,7 +443,11 @@ Table~\ref{tab:sweep} shows the setting is not delicate.  Any slope from 0.02
 and any $n_0$ from 768 to 1{,}280 closes every block by the budget and lands
 between 144 and 147; only $s=0.01$ is too weak to matter.  Mean output length
 falls with the ramp (1{,}139 to 1{,}085 tokens at $s=0.02$), so it is also
-cheaper.  The five items that go from wrong to right are ones that reasoned
+cheaper: wall clock for the full benchmark is within $\pm$10\% of plain
+decoding on seven of the eight builds in Table~\ref{tab:generality} (the
+eighth, bf16, compares against a plain run measured in a different session
+and its token count also fell).  The processor itself is one vector add per
+step.  The five items that go from wrong to right are ones that reasoned
 past 1{,}024 tokens to a wrong answer under plain decoding and answer
 correctly when stopping is made cheaper: the pilot observation above, at
 $n=5$.
