@@ -299,6 +299,27 @@
   },
   "Ornith-1.5-9B-MLX-distil-v10-oQ4": {
    "note": "v10, DPO+RPO on (teacher verified, student unterminated) pairs over v1. Harness only: HumanEval@2048 123/164 (30 truncated) vs v1 130 (24); step-150 checkpoint 116 (39). Symmetric churn, more truncation than v1, no termination shift. Not run on oMLX; not released. DECISIONS.md 49."
+  },
+  "Ornith-1.5-9B-MLX-distil-ollama-int4": {
+   "mmlu": {
+    "accuracy": 0.826,
+    "correct": 826,
+    "total": 1000,
+    "seconds": 14064.1
+   },
+   "truthfulqa": {
+    "accuracy": 0.777,
+    "correct": 635,
+    "total": 817,
+    "seconds": 13198.1
+   },
+   "humaneval": {
+    "accuracy": 0.915,
+    "correct": 150,
+    "total": 164,
+    "seconds": 3313.8
+   },
+   "note": "v1 weights quantized by Ollama's own recipe (152 int4 / 49 int8 / 226 bf16 tensors, 7.9 GB), as pushed to ollama.com/adityakarnam/Ornith-1.5-9B-MLX-distil; repacked tensor-for-tensor with scripts/ollama_to_mlx.py and measured on the oMLX server 2026-09-24. Within ~1 SE of the oQ4 release on all three."
   }
  },
  "targets": {
