@@ -25,6 +25,24 @@ All rows measured on the same oMLX harness under the same protocol: MMLU on a fi
 - TruthfulQA is 2.8 points below the parent. Every distilled build shows this, and the cause is fewer "I don't know" answers; see the [retrospective](https://github.com/adityak74/ornith-1.5-9b-distil/blob/main/RETROSPECTIVE.md).
 - The difference from the oQ4 build is within about one standard error on all three benchmarks.
 
+## oQ4 vs int4 vs bf16
+
+The same distilled weights at two quantizations, against the full-precision parent. Correct counts, then accuracy, from the same oMLX runs.
+
+| | Distilled oQ4 | **Distilled int4 (this model)** | bf16 parent |
+|---|---:|---:|---:|
+| Size on disk | 4.9 GB | **7.9 GB** | 17 GB |
+| Quantization | 4-bit, 120 modules at 5/6/8-bit | int4, 49 tensors int8, 226 bf16 | none |
+| Runs on | oMLX, mlx-lm | **Ollama (MLX engine)**, oMLX, mlx-lm | oMLX, mlx-lm |
+| MMLU (1,000) | 835 · 83.5% | **826 · 82.6%** | 826 · 82.6% |
+| TruthfulQA (817) | 645 · 79.0% | **635 · 77.7%** | 658 · 80.5% |
+| HumanEval (164) | 149 · 90.8% | **150 · 91.5%** | 150 · 91.5% |
+| Wall clock, all three | 7.7 h | **8.5 h** | 18.4 h |
+
+- **int4 against oQ4:** −0.9 MMLU, −1.3 TruthfulQA, +0.7 HumanEval (one problem). One standard error is about 1.2, 1.5 and 2.2 points respectively, so neither build is measurably better. int4 is 60% larger and about 10% slower.
+- **int4 against bf16:** identical correct counts on MMLU and HumanEval, 2.8 points lower on TruthfulQA, at 46% of the size and 2.2× faster end to end.
+- **Which to use:** int4 if you run Ollama; oQ4 if you run oMLX or mlx-lm and want the smallest file. Both are the same trained model.
+
 ## What this build is
 
 The weights are the distilled model (v1): two-teacher sequence-level distillation from Ornith-1.5-35B-A3B (code) and Qwen3.6-35B-A3B (knowledge and truthfulness), with rejection sampling so only verified-correct teacher traces were trained on. Training was LoRA rank 32 over the bf16 base on one 64 GB M4 Pro, fused afterwards.
